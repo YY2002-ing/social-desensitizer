@@ -1,10 +1,12 @@
-// 脱敏进度与推荐逻辑：基于暴露疗法的分级暴露（graded exposure）与习惯化（habituation）原则。
-// SUDs（主观不适单位，0-10）练前练后各测一次，下降曲线是"脱敏正在发生"的核心指标。
+// 脱敏进度与推荐逻辑（D17/D18，依据见 EVIDENCE.md 第 17/18 条）：
+// 判定采用多信号合成——遭遇瞬间 SUDs 跨次走低 + 预期违背记录（担心的事没发生/扛住了）+ 行为指标；
+// 单次练习内的紧张度下降不再作为判据（抑制学习模型：它与疗效几乎无预测关系）。
+// 阈值本身是工程参数（见 EVIDENCE.md 诚实清单），不是临床对应值。
 
 import { ConversationNode, Difficulty, Incident, SimulationAttempt } from './types';
 
 // ── 场景卡片脱敏状态机 ─────────────────────────────────────────
-// 未开始 → 脱敏中 → 已脱敏（练≥3次且 SUDs 降幅≥40%）→ 现实验证 ✓（"我做到了"）
+// 未开始 → 脱敏中 → 已脱敏（多信号）→ 现实验证 ✓（"我做到了"）
 
 export type NodeStatus = 'new' | 'training' | 'desensitized' | 'applied';
 
@@ -15,23 +17,36 @@ export const NODE_STATUS_LABELS: Record<NodeStatus, { label: string; className: 
   applied:       { label: '现实验证 ✓', className: 'bg-green-500 text-white' },
 };
 
-const sudsAttempts = (node: ConversationNode): SimulationAttempt[] =>
-  // attempts 存储时新的在前，按时间正序排回来
-  [...node.attempts].reverse().filter(a => a.sudsBefore != null && a.sudsAfter != null);
+/** 某次演练的"遭遇瞬间"紧张度：新数据用 sudsEncounter；旧数据用练前值作为近似（当年测的是"想到要面对他"） */
+export const encounterSuds = (a: SimulationAttempt): number | null =>
+  a.sudsEncounter ?? a.sudsBefore ?? null;
+
+/** 该卡片按时间正序的遭遇紧张度序列（attempts 存储时新的在前） */
+export const nodeEncounterSeries = (node: ConversationNode): number[] =>
+  [...node.attempts].reverse().map(encounterSuds).filter((v): v is number => v != null);
+
+/** 预期违背的成功记录数：担心的局面没出现，或出现了但应对住了 */
+export const expectancySuccesses = (node: ConversationNode): number =>
+  node.attempts.filter(a => a.debrief?.fearedOccurred === 'no' || a.debrief?.fearedOccurred === 'occurred_coped').length;
 
 export function getNodeStatus(node: ConversationNode, incident: Incident): NodeStatus {
   if (incident.realWorldRecords.some(r => r.linkedNodeId === node.id)) return 'applied';
-  const rated = sudsAttempts(node);
-  if (node.attempts.length >= 3 && rated.length >= 2) {
-    const baseline = rated[0].sudsBefore!;
-    const latest = rated[rated.length - 1].sudsAfter!;
-    if (baseline === 0 || (baseline - latest) / baseline >= 0.4) return 'desensitized';
+  const series = nodeEncounterSeries(node);
+  if (node.attempts.length >= 3 && series.length >= 2) {
+    const first = series[0];
+    const latest = series[series.length - 1];
+    // 信号一：遭遇瞬间紧张度跨次显著走低（最近≤3，或较首次下降≥3分）
+    const sudsSignal = latest <= 3 || first - latest >= 3;
+    // 信号二：至少一次预期违背的成功经验（旧数据没有对账记录，则单靠信号一）
+    const hasDebriefData = node.attempts.some(a => a.debrief);
+    const expectancySignal = !hasDebriefData || expectancySuccesses(node) >= 1;
+    if (sudsSignal && expectancySignal) return 'desensitized';
   }
   return node.attempts.length > 0 ? 'training' : 'new';
 }
 
-// ── 难度阶梯推荐（只推荐，不强制锁）───────────────────────────
-// 从温和开始逐级向上；某一档"通过"（练后 SUDs ≤ 4）才推荐下一档；爬完阶梯推荐随机模式。
+// ── 难度推荐（D18：五档永远自由选，这里只产生"推荐"角标和一句理由）──
+// 依据：经典协议从中等强度起步也可行；强度可变的暴露学得更牢（variability）。
 
 const LADDER: Difficulty[] = [Difficulty.GENTLE, Difficulty.REALISTIC, Difficulty.HARD, Difficulty.WORST_REAL];
 
@@ -42,22 +57,21 @@ export interface DifficultyRecommendation {
 
 export function recommendDifficulty(node: ConversationNode): DifficultyRecommendation {
   if (node.attempts.length === 0) {
-    return { difficulty: Difficulty.GENTLE, reason: '第一次练这个场景，脱敏训练建议从最温和的一档开始，逐级向上' };
+    return { difficulty: Difficulty.REALISTIC, reason: '五档随你挑。第一次练，"现实模式"最接近真实拉扯；想先热身选温和，想直面挑战也行' };
   }
-  let highestCleared = -1;
-  LADDER.forEach((d, idx) => {
-    const cleared = node.attempts.some(a => a.difficulty === d && a.sudsAfter != null && a.sudsAfter <= 4);
-    if (cleared) highestCleared = Math.max(highestCleared, idx);
-  });
-  if (highestCleared === -1) {
-    const tried = LADDER.findIndex(d => node.attempts.some(a => a.difficulty === d));
-    const target = tried === -1 ? Difficulty.GENTLE : LADDER[tried];
-    return { difficulty: target, reason: '这一档练完紧张度还偏高，建议同一档位再巩固一次' };
+  const latest = node.attempts[0]; // 新的在前
+  const latestSuds = encounterSuds(latest);
+  const idx = LADDER.indexOf(latest.difficulty);
+  // 上一轮遭遇紧张度不高且守住了 → 推荐升档或换随机（变化性有利于学习）
+  const heldWell = (latestSuds == null || latestSuds <= 4) && latest.review?.outcome !== 'derailed';
+  if (heldWell) {
+    if (idx === -1 || idx >= LADDER.length - 1) {
+      return { difficulty: Difficulty.RANDOM, reason: '上一轮相当稳。试试随机模式——不可预测的对手最接近真实世界，也最锻炼人' };
+    }
+    return { difficulty: LADDER[idx + 1], reason: '上一轮比较从容，可以往上走一档；研究发现难度有变化反而学得更牢' };
   }
-  if (highestCleared >= LADDER.length - 1) {
-    return { difficulty: Difficulty.RANDOM, reason: '四档难度都已经拿下，试试反应不可预测的随机模式吧' };
-  }
-  return { difficulty: LADDER[highestCleared + 1], reason: '上一档已经比较从容了，按恐惧阶梯可以往上爬一级' };
+  const target = idx === -1 ? Difficulty.REALISTIC : latest.difficulty;
+  return { difficulty: target, reason: '上一轮紧张度还偏高，同档再来一轮也好、换一档感受不同强度也好——都由你定' };
 }
 
 // ── 成长页统计 ─────────────────────────────────────────────────
@@ -152,10 +166,53 @@ export function getTacticMastery(incidents: Incident[]): TacticMastery[] {
   return [...map.values()].sort((a, b) => b.practiceCount - a.practiceCount);
 }
 
-/** SUDs 曲线：所有带评分的演练按时间正序，练前/练后两条线 */
-export function getSudsSeries(incidents: Incident[]): { before: number; after: number; timestamp: number }[] {
+/** 脱敏曲线：所有演练的"遭遇瞬间"紧张度按时间正序（旧数据用练前值近似） */
+export function getSudsSeries(incidents: Incident[]): { value: number; timestamp: number }[] {
   return allAttempts(incidents)
-    .filter(a => a.sudsBefore != null && a.sudsAfter != null)
+    .map(a => ({ value: encounterSuds(a), timestamp: a.timestamp }))
+    .filter((p): p is { value: number; timestamp: number } => p.value != null)
+    .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+// ── 预期对账统计（D17 信号二）────────────────────────────────
+
+export interface ExpectancyStats {
+  total: number;        // 对过账的轮数
+  notOccurred: number;  // 担心的局面没出现
+  coped: number;        // 出现了但应对住了
+}
+
+export function getExpectancyStats(incidents: Incident[]): ExpectancyStats {
+  const debriefs = allAttempts(incidents).map(a => a.debrief?.fearedOccurred).filter(Boolean);
+  return {
+    total: debriefs.length,
+    notOccurred: debriefs.filter(d => d === 'no').length,
+    coped: debriefs.filter(d => d === 'occurred_coped').length,
+  };
+}
+
+// ── 行为进步（D17 信号三）：每轮的自我主张 vs 安全行为计数，按时间正序 ──
+
+export interface BehaviorTrendPoint {
+  timestamp: number;
+  assertive: number; // 自我主张行为次数（review.behaviorObservations 中 assertive 组）
+  safety: number;    // 安全行为次数（avoidance + impression 组）
+  helpCount: number; // 求助次数（机械指标）
+}
+
+const ASSERTIVE_IDS = new Set(['refuse', 'boundary', 'challenge', 'name-tactic']);
+
+export function getBehaviorTrend(incidents: Incident[]): BehaviorTrendPoint[] {
+  return allAttempts(incidents)
+    .filter(a => a.review?.behaviorObservations || a.behavior)
     .sort((a, b) => a.timestamp - b.timestamp)
-    .map(a => ({ before: a.sudsBefore!, after: a.sudsAfter!, timestamp: a.timestamp }));
+    .map(a => {
+      const obs = a.review?.behaviorObservations || [];
+      return {
+        timestamp: a.timestamp,
+        assertive: obs.filter(o => ASSERTIVE_IDS.has(o.categoryId)).length,
+        safety: obs.filter(o => !ASSERTIVE_IDS.has(o.categoryId)).length,
+        helpCount: a.behavior?.helpCount ?? 0,
+      };
+    });
 }

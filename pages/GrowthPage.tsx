@@ -3,20 +3,20 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Incident } from '../types';
 import { getTactic } from '../tactics';
-import { getGrowthStats, getWeeklyPractice, getMilestones, getTacticMastery, getSudsSeries } from '../progress';
+import { getGrowthStats, getWeeklyPractice, getMilestones, getTacticMastery, getSudsSeries, getExpectancyStats, getBehaviorTrend } from '../progress';
 
 interface GrowthPageProps {
   incidents: Incident[];
 }
 
-// SUDs 下降曲线：练前/练后两条折线，纯 SVG。这是"脱敏正在发生"最直接的证据。
-const SudsChart: React.FC<{ series: { before: number; after: number }[] }> = ({ series }) => {
+// 脱敏曲线：每轮"遭遇瞬间"紧张度的单条折线（D16/D17），纯 SVG。
+// 同一类场景砸出来，第一次 8 分、练到后来 3 分——这条线走低就是脱敏的证据。
+const SudsChart: React.FC<{ series: { value: number }[] }> = ({ series }) => {
   const W = 320, H = 150, PAD = 24;
   const n = series.length;
   const x = (i: number) => n === 1 ? W / 2 : PAD + (i * (W - PAD * 2)) / (n - 1);
   const y = (v: number) => H - PAD - (v / 10) * (H - PAD * 2);
-  const line = (get: (s: { before: number; after: number }) => number) =>
-    series.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(get(s)).toFixed(1)}`).join(' ');
+  const line = series.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(s.value).toFixed(1)}`).join(' ');
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
@@ -26,19 +26,29 @@ const SudsChart: React.FC<{ series: { before: number; after: number }[] }> = ({ 
           <text x={PAD - 6} y={y(v) + 3} fontSize="8" fill="#9CA3AF" textAnchor="end">{v}</text>
         </g>
       ))}
-      <path d={line(s => s.before)} fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" />
-      <path d={line(s => s.after)} fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" />
+      <path d={line} fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" />
       {series.map((s, i) => (
-        <g key={i}>
-          <circle cx={x(i)} cy={y(s.before)} r="3" fill="#9CA3AF" />
-          <circle cx={x(i)} cy={y(s.after)} r="3.5" fill="#22C55E" />
-        </g>
+        <circle key={i} cx={x(i)} cy={y(s.value)} r="3.5" fill="#22C55E" />
       ))}
       <g fontSize="8">
-        <circle cx={W - 108} cy={12} r="3" fill="#9CA3AF" /><text x={W - 102} y={15} fill="#6B7280">练前紧张度</text>
-        <circle cx={W - 52} cy={12} r="3" fill="#22C55E" /><text x={W - 46} y={15} fill="#6B7280">练后</text>
+        <circle cx={W - 96} cy={12} r="3" fill="#22C55E" /><text x={W - 90} y={15} fill="#6B7280">遭遇瞬间紧张度</text>
       </g>
     </svg>
+  );
+};
+
+// 行为进步：每轮自我主张（绿）与安全行为（灰）的并列小柱（D17 信号三）
+const BehaviorTrendChart: React.FC<{ trend: { assertive: number; safety: number }[] }> = ({ trend }) => {
+  const maxV = Math.max(1, ...trend.map(t => Math.max(t.assertive, t.safety)));
+  return (
+    <div className="flex items-end justify-between h-20 space-x-1">
+      {trend.map((t, i) => (
+        <div key={i} className="flex-1 flex items-end justify-center space-x-0.5 h-full">
+          <div className="w-2 rounded-t-sm bg-green-500" style={{ height: `${Math.max(4, (t.assertive / maxV) * 100)}%`, opacity: t.assertive ? 1 : 0.15 }}></div>
+          <div className="w-2 rounded-t-sm bg-gray-300" style={{ height: `${Math.max(4, (t.safety / maxV) * 100)}%`, opacity: t.safety ? 1 : 0.15 }}></div>
+        </div>
+      ))}
+    </div>
   );
 };
 
@@ -49,6 +59,8 @@ const GrowthPage: React.FC<GrowthPageProps> = ({ incidents }) => {
   const milestones = getMilestones(incidents);
   const mastery = getTacticMastery(incidents);
   const suds = getSudsSeries(incidents);
+  const expectancy = getExpectancyStats(incidents);
+  const behaviorTrend = getBehaviorTrend(incidents);
   const maxWeekly = Math.max(1, ...weekly.map(w => w.count));
 
   return (
@@ -76,18 +88,53 @@ const GrowthPage: React.FC<GrowthPageProps> = ({ incidents }) => {
           ))}
         </section>
 
-        {/* SUDs 曲线 */}
+        {/* 脱敏曲线：遭遇瞬间值（D16） */}
         <section className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-          <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">脱敏曲线（SUDs 紧张度）</h3>
+          <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">脱敏曲线（遭遇瞬间紧张度）</h3>
           {suds.length >= 2 ? (
             <>
               <SudsChart series={suds} />
-              <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">每次模拟练前、练后各测一次紧张度（0-10）。绿线整体走低，说明同样的场景正在变得不那么可怕——这就是脱敏。</p>
+              <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">每次模拟里，对方那句话砸出来的瞬间你标记的紧张度（0-10）。这条线整体走低，说明同样的场景正在变得不那么可怕——这就是脱敏。</p>
             </>
           ) : (
-            <p className="text-xs text-gray-400 py-8 text-center">完成 2 次带紧张度评分的模拟后，这里会画出你的脱敏曲线</p>
+            <p className="text-xs text-gray-400 py-8 text-center">完成 2 次带紧张度标记的模拟后，这里会画出你的脱敏曲线</p>
           )}
         </section>
+
+        {/* 预期对账：担心的事 vs 实际发生的（D17 信号二） */}
+        {expectancy.total > 0 && (
+          <section className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+            <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">练前的担心，后来怎么样了</h3>
+            <div className="flex items-center justify-around text-center">
+              <div>
+                <p className="text-2xl font-black text-green-500 tabular-nums">{expectancy.notOccurred}</p>
+                <p className="text-[10px] text-gray-400 mt-1">次没有发生</p>
+              </div>
+              <div>
+                <p className="text-2xl font-black text-blue-500 tabular-nums">{expectancy.coped}</p>
+                <p className="text-[10px] text-gray-400 mt-1">次发生了但你应对住了</p>
+              </div>
+              <div>
+                <p className="text-2xl font-black text-gray-300 tabular-nums">{expectancy.total}</p>
+                <p className="text-[10px] text-gray-400 mt-1">轮对过账</p>
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-3 leading-relaxed">"以为会发生的糟糕局面，其实没发生/发生了也扛住了"——积累这种经验，正是练习起效的核心机制。</p>
+          </section>
+        )}
+
+        {/* 行为进步（D17 信号三） */}
+        {behaviorTrend.length >= 2 && (
+          <section className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+            <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">每轮行为对比</h3>
+            <BehaviorTrendChart trend={behaviorTrend} />
+            <div className="flex items-center space-x-4 mt-2">
+              <span className="flex items-center text-[9px] text-gray-500"><span className="w-2 h-2 bg-green-500 rounded-sm mr-1"></span>自我主张（拒绝/亮边界/反问/点破）</span>
+              <span className="flex items-center text-[9px] text-gray-500"><span className="w-2 h-2 bg-gray-300 rounded-sm mr-1"></span>安全行为（找补/道歉/回避）</span>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">绿柱渐多、灰柱渐少，是比任何自我感觉都硬的进步证据。</p>
+          </section>
+        )}
 
         {/* 每周活跃度 */}
         <section className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
