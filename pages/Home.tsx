@@ -53,25 +53,44 @@ const Home: React.FC<HomeProps> = ({ setSession, saveIncident, incidents, messag
     }
   }, [messages, isTyping]);
 
+  // 提取竞态防护：同一时间只允许一个提取在跑，期间新触发的排队；
+  // 已有卡片清单和会话事件 id 永远从 ref 读最新值，否则并发提取会看到旧清单、重复出卡
+  const incidentsRef = useRef(incidents);
+  const sessionIncidentIdRef = useRef(sessionIncidentId);
+  useEffect(() => { incidentsRef.current = incidents; }, [incidents]);
+  useEffect(() => { sessionIncidentIdRef.current = sessionIncidentId; }, [sessionIncidentId]);
+  const extractBusyRef = useRef(false);
+  const extractPendingRef = useRef<Message[] | null>(null);
+
   // 静默提取场景卡片并保存/合并进本次倾诉对应的事件；顺带检测"我做到了"式成功分享
   const extractIncidents = (history: Message[]) => {
     if (history.length < 3) return;
-    const existingIncident = incidents.find(i => i.id === sessionIncidentId);
+    if (extractBusyRef.current) { extractPendingRef.current = history; return; } // 排队，跑完再提最新的
+    extractBusyRef.current = true;
+    const currentSessionId = sessionIncidentIdRef.current;
+    const existingIncident = incidentsRef.current.find(i => i.id === currentSessionId);
     const existingNodes = existingIncident?.nodes.map(n => ({ description: n.description, opponentSaid: n.opponentSaid })) || [];
     // 全部已有练习目标（事件标题 + 场景描述），供 AI 匹配用户分享的成功经历
-    const knownTargets = incidents.flatMap(inc => [inc.title, ...inc.nodes.map(n => n.description)]);
+    const knownTargets = incidentsRef.current.flatMap(inc => [inc.title, ...inc.nodes.map(n => n.description)]);
     extractNodesFromChat(history, existingNodes, knownTargets)
       .then(result => {
         if (result.nodes && result.nodes.length > 0) {
           const confessionText = history.filter(m => m.role === 'user').map(m => m.content).join('\n');
-          const id = saveIncident(result, confessionText, sessionIncidentId);
+          const id = saveIncident(result, confessionText, currentSessionId);
           setSessionIncidentId(id);
+          sessionIncidentIdRef.current = id; // 立刻同步，排队中的下一轮提取要用
         }
         if (result.achievement?.matchedDescription) {
           setPendingAchievement(result.achievement);
         }
       })
-      .catch(e => console.error("Extraction failed", e));
+      .catch(e => console.error("Extraction failed", e))
+      .finally(() => {
+        extractBusyRef.current = false;
+        const pending = extractPendingRef.current;
+        extractPendingRef.current = null;
+        if (pending) extractIncidents(pending);
+      });
   };
 
   // 用户点击成就提示条确认：找到命中的事件/卡片，写入现实应用记录并庆祝

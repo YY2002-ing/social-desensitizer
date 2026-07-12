@@ -279,9 +279,10 @@ ${JSON.stringify(existingNodes)}
 
 另外留意用户是否表达了"万一发生 XX 就完了"这种反复预演的最坏结果（灾难化想象），如果有，按 CBT 去灾难化的结构捕捉；没有明显流露则 catastrophe 留 null。
 
-${knownTargets.length > 0 ? `还要留意：用户是否在分享"我做到了/我真的去做了/这次我说出来了"这类现实中的成功经历，且做到的事能对应到下面这些已有的练习目标之一：
+${knownTargets.length > 0 ? `还要留意：用户是否分享了自己在现实中已经做到的应对——拒绝了、说出口了、反击了、终止了纠缠等（例："我直接发消息说不咨询了""这次我当面说不了"）。
+判断它指向下面列表中的哪一项：**指向同一件事、同一个对象就算命中，不要求措辞相似**（比如用户说"我拒绝了那个卖假实习的"，列表里有"XX诈骗事件"，就算命中该事件）。
 ${JSON.stringify(knownTargets)}
-如果能明确对应，填入 achievement（matchedDescription 必须原样复制上面列表中的某一项）；对应不上或用户没有分享成功经历，achievement 留 null。不要勉强匹配。` : ''}
+命中则填入 achievement（matchedDescription 必须原样复制列表中的那一项，summary 用一句话概括用户做到了什么）；用户没分享成功经历、或成功与列表全部无关，achievement 留 null。` : ''}
 
 输出格式（JSON）：
 {
