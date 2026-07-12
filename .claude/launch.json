@@ -18,9 +18,8 @@
     {
       "name": "dream-app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "/Users/yingyao/Desktop/dream-sequel-prd/代码文件"],
-      "port": 5173,
-      "autoPort": true
+      "runtimeArgs": ["run", "dev", "--prefix", "/Users/yingyao/Desktop/dream-sequel-prd/代码文件", "--", "--port", "5199", "--strictPort"],
+      "port": 5199
     },
     {
       "name": "spirit-demo",

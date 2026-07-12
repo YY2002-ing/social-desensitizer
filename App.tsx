@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import { Incident, SimulationAttempt, SessionArchive, Message, RealWorldRecord, NodeStrategy } from './types';
+import { Incident, SimulationAttempt, SessionArchive, Message, RealWorldRecord } from './types';
 import { ExtractedIncident } from './services/deepseekService';
 import Home from './pages/Home';
-import StrategyPage from './pages/StrategyPage';
+import TeachingPage from './pages/TeachingPage';
 import SimulationPage from './pages/SimulationPage';
 import ReviewPage from './pages/ReviewPage';
 import ArchivePage from './pages/ArchivePage';
@@ -139,11 +139,11 @@ const App: React.FC = () => {
     })));
   };
 
-  // 应对方向内容生成后缓存到卡片上，避免重复调 API
-  const saveNodeStrategy = (incidentId: string, nodeId: string, strategy: NodeStrategy) => {
+  // 教学对话记录存到卡片上：跳过后随时可回来接着聊（D15/D29）
+  const saveTeachingMessages = (incidentId: string, nodeId: string, messages: Message[]) => {
     setIncidents(prev => persist(prev.map(inc => {
       if (inc.id !== incidentId) return inc;
-      return { ...inc, nodes: inc.nodes.map(n => n.id === nodeId ? { ...n, strategies: strategy } : n) };
+      return { ...inc, nodes: inc.nodes.map(n => n.id === nodeId ? { ...n, teachingMessages: messages } : n) };
     })));
   };
 
@@ -168,7 +168,7 @@ const App: React.FC = () => {
           />
           <Route
             path="/strategy"
-            element={<StrategyPage session={currentSession} incidents={incidents} saveNodeStrategy={saveNodeStrategy} />}
+            element={<TeachingPage session={currentSession} setSession={setCurrentSession} incidents={incidents} saveTeachingMessages={saveTeachingMessages} />}
           />
           <Route
             path="/simulate"

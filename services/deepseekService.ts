@@ -1,4 +1,4 @@
-import { Difficulty, Message, ConversationNode, NodeStrategy, DebriefRecord, SimulationReview } from "../types";
+import { Difficulty, Message, ConversationNode, DebriefRecord, SimulationReview } from "../types";
 import { tacticVocabularyForPrompt, getTactic } from "../tactics";
 import { behaviorVocabularyForPrompt } from "../behaviors";
 
@@ -327,53 +327,6 @@ export const createCatastropheChat = (fear: string, opponentProfile: string): Ch
 2. 忠于用户描述的最坏结果本身，不要无中生有地加码到比用户所说更夸张的地步。
 3. 语气真实自然，简短，不要说教，不要提前剧透"这没什么大不了"，让用户自己在过程中面对它、处理它。` + SAFETY_GUARDRAIL
   );
-
-/** 应对方向（练前学习页）：定位对方话术到具体原话 + 拆解为什么有效 + 3 个应对原则。结果缓存在卡片上 */
-export const generateNodeStrategy = async (node: ConversationNode, opponentProfile: string): Promise<NodeStrategy> => {
-  const text = await callDeepSeek(
-    [
-      {
-        role: 'system',
-        content: '你是社交应对策略专家，擅长把心理学的操纵识别知识讲成大白话。严格输出 JSON 格式，不要有任何其他文字。',
-      },
-      {
-        role: 'user',
-        content: `用户遇到了这样一个社交场景，请生成练习前的"应对方向"讲解。
-
-【对方人设】${opponentProfile || '未知'}
-【场景】${node.description}
-【对方的原话】"${node.opponentSaid}"
-【用户当时的感受】${node.userFeeling}
-【用户当时想做但没做的事】${node.userWantedToDo}
-
-【话术词表】tacticId 必须从下列词表中选择：
-${tacticVocabularyForPrompt()}
-
-要求：
-1. tacticAnalysis：识别对方用了哪些话术（1-3个），每个话术引用对方的具体原话（quote 尽量用上面给出的原话或其中片段），并用一两句大白话讲清"这招为什么恰好对用户有效"。
-2. principles：给 3 个应对原则，从"最保守（保护自己）"到"最主动（正面反击）"排列，每个配 1-2 句可以直接照着说的话术示例。示例要口语化、符合这个具体场景，不要空泛。
-
-输出格式（JSON）：
-{
-  "tacticAnalysis": [
-    { "tacticId": "词表中的id", "quote": "对方原话", "why": "这招为什么对用户有效" }
-  ],
-  "principles": [
-    { "title": "原则名（短）", "explanation": "一两句解释", "examples": ["话术示例1", "话术示例2"] }
-  ]
-}`,
-      },
-    ],
-    true
-  );
-
-  try {
-    const parsed = JSON.parse(text);
-    return { tacticAnalysis: parsed.tacticAnalysis || [], principles: parsed.principles || [] };
-  } catch {
-    return { tacticAnalysis: [], principles: [] };
-  }
-};
 
 // ─── 对话式教学（D15）：替代静态"应对方向"页 ─────────────────────
 
