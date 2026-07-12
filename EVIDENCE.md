@@ -85,13 +85,15 @@ SUDs 是暴露疗法的标准测量（临床用 0-100，教科书记录单练前
 
 ### 17. 脱敏多信号判定＋行为指标（D17） — ✅ 有据
 三路证据对应三个临床构念：
-- **回避/接近**：行为回避测验（BAT）测"敢不敢进入、待多久、是否中途逃离"，跨次重复测量看进步 → 对应机械指标（中途退出、坚持轮数、捕捉了却不练的卡）。
+- **回避/接近**：行为回避测验（BAT）测"敢不敢进入、待多久、是否中途逃离"，跨次重复测量看进步。**但作者指出（2026-07-11）：App 不是诊室的受控环境**——中途退出和卡片不练可能是有事/嫌麻烦/本就不需要练，直接推断为回避会污染数据。临床同样禁止这种推断：作业未完成时治疗师须以不评判的方式探讨原因，研究证实未完成的首要原因是外部因素与动机，而非回避。**修正**：这两项从判定输入中剔除；仅当"差异化模式"出现（同一用户别的卡正常练、唯独某卡反复点开秒退）才作为观察信号，且由边牧不评判地询问确认动机——行为可记录，动机不推断，要知道动机就问。同时提供"这张不需要练"归档选项（用户有权宣布某场景不值得练，D28）。留在判定内的机械指标仅剩模拟内部三项（回复用时、字数、求助次数）。
 - **安全行为**：SBQ/SAFE 量表的条目直接适用于对话情境（说得很少、避免提问、避免谈自己、字斟句酌；印象管理：反复找补、努力装正常）→ 对应 AI 按固定类目识别文本行为＋回复用时/字数。
 - **预期违背**："担心的事没发生/发生了但承受住了"的记录 → 对应对账日志。
 - [BAT 与治疗效果关联研究](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9231550/)
 - [安全行为两亚型研究（SBQ 条目）— PLOS ONE](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0223165)
 - [SAFE 量表](https://www.sciencedirect.com/science/article/abs/pii/S0887618509001145)
 - [Buchholz et al., 2022：暴露中预期违背的 RCT](https://jonabram.web.unc.edu/wp-content/uploads/sites/2968/2022/04/Buchholz-et-al.-2022-Expectancy-violation-during-exposure-RCT.pdf)
+- [CBT 作业未完成的障碍研究（外部因素与动机为首要原因，须探讨不许推断）](https://pmc.ncbi.nlm.nih.gov/articles/PMC3774296/)
+- [作业问题在 CBT 中的发生率与处理](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/0C47B89190ED53495A5223D38216B45A/S1352465804001365a.pdf/problems_with_homework_in_cbt_rare_exception_or_rather_frequent.pdf)
 
 ### 18. 难度自由选＋推荐角标（D18） — ✅ 有据
 见第 4 条（变化性优于严格爬梯）；"用户自主+专业建议"符合 D28 总纲。
