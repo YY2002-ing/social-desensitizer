@@ -29,6 +29,12 @@
       "autoPort": true
     },
     {
+      "name": "dream-mockup",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8641", "--directory", "/private/tmp/claude-501/-Users-yingyao-Desktop------social-assistant-main/8a033f9b-b59e-41ec-8662-cf5ad167977a/scratchpad"],
+      "port": 8641
+    },
+    {
       "name": "kanban-mockup",
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8737", "--directory", "/private/tmp/claude-501/-Users-yingyao-Desktop------social-assistant-main/84dcc174-d7c5-4352-ad1b-b49da67db81a/scratchpad/kanban-mockup"],
