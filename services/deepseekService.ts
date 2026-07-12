@@ -2,9 +2,12 @@ import { Difficulty, Message, ConversationNode, DebriefRecord, SimulationReview 
 import { tacticVocabularyForPrompt, getTactic } from "../tactics";
 import { behaviorVocabularyForPrompt } from "../behaviors";
 
-// ─── API Key 存取（localStorage，绝不硬编码）───────────────────────
+// ─── API Key 存取（绝不硬编码）─────────────────────────────────────
+// 优先用户在页面里保存的 Key（localStorage）；本地开发可在项目根目录 .env.local 里配
+// VITE_DEEPSEEK_KEY=sk-xxx 作为兜底（.env* 已被 .gitignore 挡住，永不进仓库）。
 const KEY_STORAGE = 'social_trainer_ds_key';
-export const getApiKey  = (): string => localStorage.getItem(KEY_STORAGE) || '';
+const ENV_KEY: string = (import.meta as any).env?.VITE_DEEPSEEK_KEY || '';
+export const getApiKey  = (): string => localStorage.getItem(KEY_STORAGE) || ENV_KEY;
 export const saveApiKey = (key: string): void => { localStorage.setItem(KEY_STORAGE, key.trim()); };
 
 // ─── 安全护栏（3.2 不触医疗红线的落地，追加到所有会话 prompt）──────
