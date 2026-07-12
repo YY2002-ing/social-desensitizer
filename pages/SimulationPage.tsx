@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Difficulty, Message, SessionArchive, SimulationAttempt, Incident, BehaviorRecord } from '../types';
-import { createOpponentChat, createWarAssistantChat, generateReview, OpponentSession, AssistantSession } from '../services/deepseekService';
+import { Difficulty, Message, SessionArchive, SimulationAttempt, Incident, BehaviorRecord, DebriefRecord } from '../types';
+import { createOpponentChat, createWarAssistantChat, createDebriefChat, extractDebrief, generateReview, OpponentSession, AssistantSession } from '../services/deepseekService';
 import { recommendDifficulty } from '../progress';
 
 interface SimulationPageProps {
@@ -12,38 +12,36 @@ interface SimulationPageProps {
   incidents: Incident[];
 }
 
-type Phase = 'difficulty' | 'suds-before' | 'chat' | 'suds-after';
+// 阶段流转（D16）：选难度 → 进入对话（对方第一句话弹出后测"遭遇瞬间"紧张度）→ 练完对话式对账 → 复盘
+type Phase = 'difficulty' | 'chat' | 'debrief';
 
-// SUDs（主观不适单位，0-10）滑条：暴露疗法的标准测量，练前练后各测一次
-const SudsSlider: React.FC<{
-  title: string;
-  subtitle: string;
-  confirmLabel: string;
-  onConfirm: (value: number) => void;
-}> = ({ title, subtitle, confirmLabel, onConfirm }) => {
+// 遭遇瞬间紧张度（SUDs 0-10）：对方第一句话弹出后、消息仍可见时以底部弹层测量（D16）
+const EncounterSudsSheet: React.FC<{ onConfirm: (value: number) => void }> = ({ onConfirm }) => {
   const [value, setValue] = useState(5);
   const color = value <= 3 ? 'text-green-500' : value <= 6 ? 'text-orange-500' : 'text-red-500';
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-white flex flex-col justify-center p-8">
-      <h2 className="text-xl font-bold text-gray-800">{title}</h2>
-      <p className="text-xs text-gray-400 mt-2 leading-relaxed">{subtitle}</p>
-      <div className={`text-7xl font-black text-center my-10 tabular-nums ${color}`}>{value}</div>
-      <input
-        type="range" min={0} max={10} step={1} value={value}
-        onChange={e => setValue(Number(e.target.value))}
-        className="w-full accent-blue-500"
-      />
-      <div className="flex justify-between text-[10px] text-gray-400 mt-2">
-        <span>0 完全平静</span>
-        <span>5 明显紧张</span>
-        <span>10 极度紧张</span>
+    <div className="absolute inset-0 z-40 bg-black/30 flex items-end">
+      <div className="w-full bg-white rounded-t-3xl p-6 pb-10 shadow-2xl animate-fade-in">
+        <h3 className="text-base font-bold text-gray-800">看到他这句话的这一刻</h3>
+        <p className="text-[11px] text-gray-400 mt-1">凭直觉拖一下：现在有多紧张？</p>
+        <div className={`text-6xl font-black text-center my-6 tabular-nums ${color}`}>{value}</div>
+        <input
+          type="range" min={0} max={10} step={1} value={value}
+          onChange={e => setValue(Number(e.target.value))}
+          className="w-full accent-blue-500"
+        />
+        <div className="flex justify-between text-[10px] text-gray-400 mt-2">
+          <span>0 完全平静</span>
+          <span>5 明显紧张</span>
+          <span>10 极度紧张</span>
+        </div>
+        <button
+          onClick={() => onConfirm(value)}
+          className="mt-6 w-full py-3.5 bg-blue-600 text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform"
+        >
+          记下了，开始应对
+        </button>
       </div>
-      <button
-        onClick={() => onConfirm(value)}
-        className="mt-12 w-full py-4 bg-blue-600 text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform"
-      >
-        {confirmLabel}
-      </button>
     </div>
   );
 };
@@ -51,7 +49,9 @@ const SudsSlider: React.FC<{
 const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, saveAttempt, incidents }) => {
   const [phase, setPhase] = useState<Phase>('difficulty');
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
-  const [sudsBefore, setSudsBefore] = useState<number | undefined>(undefined);
+  // 遭遇瞬间紧张度：对方第一句话砸出来之后测（激活态测量，D16）；undefined = 还没测
+  const [sudsEncounter, setSudsEncounter] = useState<number | undefined>(undefined);
+  const [showEncounterSuds, setShowEncounterSuds] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
@@ -64,6 +64,13 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   const [assistantInput, setAssistantInput] = useState('');
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
   const [assistantChips, setAssistantChips] = useState<string[]>([]); // 快捷胶囊：可点可无视（D20）
+
+  // 练后对账对话状态（D16：用户表达优先的三问对账）
+  const [debriefMessages, setDebriefMessages] = useState<Message[]>([]);
+  const [debriefInput, setDebriefInput] = useState('');
+  const [isDebriefTyping, setIsDebriefTyping] = useState(false);
+  const debriefChatRef = useRef<AssistantSession | null>(null);
+  const debriefScrollRef = useRef<HTMLDivElement>(null);
 
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -134,6 +141,10 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     if (assistantScrollRef.current) assistantScrollRef.current.scrollTop = assistantScrollRef.current.scrollHeight;
   }, [assistantMessages, isAssistantTyping]);
 
+  useEffect(() => {
+    if (debriefScrollRef.current) debriefScrollRef.current.scrollTop = debriefScrollRef.current.scrollHeight;
+  }, [debriefMessages, isDebriefTyping]);
+
   // 空 session 保护：直接输入 URL 或复盘页"再战"时 session 丢失的场景
   if (!selectedNode) {
     return (
@@ -144,9 +155,10 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     );
   }
 
-  const startChat = (suds: number) => {
-    setSudsBefore(suds);
-    opponentChatRef.current = createOpponentChat(difficulty!, selectedNode, session.opponentProfile);
+  // 选完难度直接进入对话：对方第一句话"啪"地弹出，紧张度在这个心跳漏一拍的时刻测（D16）
+  const startChat = (chosen: Difficulty) => {
+    setDifficulty(chosen);
+    opponentChatRef.current = createOpponentChat(chosen, selectedNode, session.opponentProfile);
     setMessages([{
       id: crypto.randomUUID(),
       role: 'opponent',
@@ -155,6 +167,14 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     }]);
     lastOpponentAtRef.current = Date.now();
     setPhase('chat');
+    // 计时器等紧张度测完再启动，测量期间不施加时间压力
+    setShowEncounterSuds(true);
+  };
+
+  const confirmEncounterSuds = (value: number) => {
+    setSudsEncounter(value);
+    setShowEncounterSuds(false);
+    lastOpponentAtRef.current = Date.now(); // 测量时间不算进首条回复用时
     setTimeLeft(60);
     startTimer();
   };
@@ -220,21 +240,62 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     } catch (e) { console.error(e); } finally { setIsAssistantTyping(false); }
   };
 
-  const finishSimulation = async (sudsAfter: number) => {
-    setIsEnding(true);
-    const review = await generateReview(messages, {
+  // 练完 → 对账对话（用户表达优先，可跳过直接看复盘，D16/D29）
+  const startDebrief = () => {
+    stopTimer();
+    setPhase('debrief');
+    debriefChatRef.current = createDebriefChat({
       nodeDescription: selectedNode.description,
-      opponentProfile: session.opponentProfile,
-      incidentTitle: session.incidentTitle,
+      fearedOutcome: session.fearedOutcome,
+      transcript: messages,
     });
+    // 开场是固定的、把话头交给用户的一句，不消耗 API
+    setDebriefMessages([{
+      id: crypto.randomUUID(),
+      role: 'opponent',
+      content: '这一轮结束了。刚才和他聊的这几个来回，你想先说点什么？',
+      timestamp: Date.now(),
+    }]);
+  };
+
+  const handleDebriefSend = async () => {
+    const content = debriefInput.trim();
+    if (!content || isDebriefTyping) return;
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content, timestamp: Date.now() };
+    setDebriefMessages(prev => [...prev, userMsg]);
+    setDebriefInput('');
+    setIsDebriefTyping(true);
+    try {
+      const turn = await debriefChatRef.current!.send(content);
+      setDebriefMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'opponent', content: turn.text, timestamp: Date.now() }]);
+    } catch (e) { console.error(e); } finally { setIsDebriefTyping(false); }
+  };
+
+  // 收尾：复盘生成 + 对账结构化提取并行跑，存档后跳转复盘页。
+  // 任一 AI 调用失败都不阻塞收尾——演练记录本身必须保住
+  const finishSimulation = async () => {
+    setIsEnding(true);
+    const hasDebrief = debriefMessages.some(m => m.role === 'user');
+    const [review, debriefExtract] = await Promise.all([
+      generateReview(messages, {
+        nodeDescription: selectedNode.description,
+        opponentProfile: session.opponentProfile,
+        incidentTitle: session.incidentTitle,
+      }).catch(() => ({ strengths: [], improvements: [], discoveries: '复盘生成失败了，这一轮的对话记录已完整保存。', tacticsIdentified: [], behaviorObservations: [], outcome: 'unclear' as const })),
+      (hasDebrief
+        ? extractDebrief(debriefMessages, session.fearedOutcome || null)
+        : Promise.resolve({ fearedOccurred: null, learned: null } as Pick<DebriefRecord, 'fearedOccurred' | 'learned'>)
+      ).catch(() => ({ fearedOccurred: null, learned: null } as Pick<DebriefRecord, 'fearedOccurred' | 'learned'>)),
+    ]);
     const attempt: SimulationAttempt = {
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       difficulty: difficulty!,
       messages: messages,
       review: review,
-      sudsBefore,
-      sudsAfter,
+      sudsEncounter,
+      fearedOutcome: session.fearedOutcome,
+      debrief: hasDebrief ? { messages: debriefMessages, ...debriefExtract } : undefined,
       behavior: { ...behaviorRef.current },
     };
     if (session.incidentId) {
@@ -259,7 +320,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
             return (
               <button
                 key={key}
-                onClick={() => { setDifficulty(key as Difficulty); setPhase('suds-before'); }}
+                onClick={() => startChat(key as Difficulty)}
                 className={`w-full text-left p-5 border-2 rounded-2xl transition-all active:scale-[0.98] relative ${isRecommended ? 'border-blue-500 bg-blue-50/30' : 'border-gray-100'}`}
               >
                 {isRecommended && <span className="absolute -top-3 right-4 bg-blue-500 text-white text-[10px] px-2 py-1 rounded-full font-bold shadow-sm">推荐</span>}
@@ -273,30 +334,45 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     );
   }
 
-  // ── 阶段二：练前 SUDs ──────────────────────────────────────
-  if (phase === 'suds-before') {
+  // ── 阶段三：练后对话式对账（用户表达优先，可跳过，D16）────────
+  if (phase === 'debrief') {
     return (
-      <SudsSlider
-        title="现在，想到要面对他"
-        subtitle="凭直觉拖一下：此刻你有多紧张？练前练后各测一次，这条曲线会告诉你脱敏正在发生。"
-        confirmLabel="记下了，进入模拟"
-        onConfirm={startChat}
-      />
-    );
-  }
-
-  // ── 阶段四：练后 SUDs ──────────────────────────────────────
-  if (phase === 'suds-after') {
-    return (
-      <div className="relative">
-        <SudsSlider
-          title="刚刚聊完这一轮"
-          subtitle="再凭直觉拖一下：现在回想和他的对话，你还有多紧张？"
-          confirmLabel="完成，生成深度复盘"
-          onConfirm={finishSimulation}
-        />
+      <div className="max-w-md mx-auto h-screen bg-[#EDEDED] flex flex-col overflow-hidden relative">
+        <header className="p-3 bg-white border-b flex items-center justify-between sticky top-0 z-10">
+          <div className="flex items-center min-w-0">
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs mr-2">💡</div>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold truncate">聊聊刚才这一轮</h1>
+              <p className="text-[10px] text-gray-400 truncate">想说什么都行，说完再看复盘</p>
+            </div>
+          </div>
+          <button onClick={finishSimulation} disabled={isEnding} className="text-[11px] font-bold text-gray-400 px-2 whitespace-nowrap">
+            {debriefMessages.some(m => m.role === 'user') ? '聊好了，看复盘 →' : '跳过，直接看复盘 →'}
+          </button>
+        </header>
+        <div ref={debriefScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          {debriefMessages.map(msg => (
+            <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`p-3 rounded-2xl text-[13px] max-w-[85%] shadow-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-500 text-white rounded-tr-none' : 'bg-white text-gray-700 rounded-tl-none border border-gray-100'}`}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          {isDebriefTyping && <div className="text-[10px] text-gray-400 italic ml-2">正在想...</div>}
+        </div>
+        <div className="bg-white border-t p-3 pb-8 flex items-center space-x-2">
+          <input
+            type="text"
+            value={debriefInput}
+            onChange={e => setDebriefInput(e.target.value)}
+            onKeyPress={e => e.key === 'Enter' && handleDebriefSend()}
+            placeholder="随便说说..."
+            className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-1 focus:ring-blue-400"
+          />
+          <button onClick={handleDebriefSend} className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-colors ${debriefInput.trim() ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-400'}`}>发送</button>
+        </div>
         {isEnding && (
-          <div className="fixed inset-0 z-[60] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-10 text-center animate-fade-in">
+          <div className="absolute inset-0 z-[60] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-10 text-center animate-fade-in">
             <div className="w-12 h-12 border-4 border-gray-200 border-t-green-500 rounded-full animate-spin mb-4"></div>
             <h3 className="text-lg font-bold text-gray-800">正在生成深度复盘...</h3>
           </div>
@@ -314,7 +390,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
           <h1 className="text-sm font-bold truncate">实战练习中</h1>
           <p className="text-[10px] text-gray-400">{difficultyLabels[difficulty!]?.title}</p>
         </div>
-        <button onClick={() => { stopTimer(); setPhase('suds-after'); }} className="text-xs font-bold text-red-500 bg-white px-2 py-1 rounded-md shadow-sm">完成</button>
+        <button onClick={startDebrief} className="text-xs font-bold text-red-500 bg-white px-2 py-1 rounded-md shadow-sm">完成</button>
       </header>
       <div className="h-1 bg-gray-200 w-full">
         <div className={`h-full transition-all duration-1000 ${timeLeft < 15 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${(timeLeft / 60) * 100}%` }}></div>
@@ -341,6 +417,9 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
           <button onClick={handleOpenAssistant} className="text-[11px] bg-blue-50 text-blue-500 px-4 py-1.5 rounded-full font-bold active:scale-95 transition-transform">💡 小助手教我</button>
         </div>
       </div>
+      {/* 遭遇瞬间紧张度：对方第一句话可见时的底部弹层（D16） */}
+      {showEncounterSuds && <EncounterSudsSheet onConfirm={confirmEncounterSuds} />}
+
       {showAssistant && (
         <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-end justify-center sm:items-center">
           <div className="bg-[#EDEDED] w-full max-w-md h-[75vh] sm:h-[80vh] rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl animate-fade-in">

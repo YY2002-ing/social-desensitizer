@@ -27,6 +27,12 @@
       "runtimeArgs": ["start", "--prefix", "/Users/yingyao/Desktop/精神体社交/演示版"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "kanban-mockup",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8737", "--directory", "/private/tmp/claude-501/-Users-yingyao-Desktop------social-assistant-main/84dcc174-d7c5-4352-ad1b-b49da67db81a/scratchpad/kanban-mockup"],
+      "port": 8737
     }
   ]
 }

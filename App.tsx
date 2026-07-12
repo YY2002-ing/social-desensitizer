@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import { Incident, SimulationAttempt, SessionArchive, Message, RealWorldRecord } from './types';
+import { Incident, SimulationAttempt, SessionArchive, Message, RealWorldRecord, DebriefRecord } from './types';
 import { ExtractedIncident } from './services/deepseekService';
 import Home from './pages/Home';
 import TeachingPage from './pages/TeachingPage';
@@ -139,6 +139,19 @@ const App: React.FC = () => {
     })));
   };
 
+  // 复盘页补聊对账（跳过后的重入口，D29）：把对账记录补写进已存档的演练
+  const updateAttemptDebrief = (incidentId: string, nodeId: string, attemptId: string, debrief: DebriefRecord) => {
+    setIncidents(prev => persist(prev.map(inc => {
+      if (inc.id !== incidentId) return inc;
+      return {
+        ...inc,
+        nodes: inc.nodes.map(n => n.id === nodeId
+          ? { ...n, attempts: n.attempts.map(a => a.id === attemptId ? { ...a, debrief } : a) }
+          : n),
+      };
+    })));
+  };
+
   // 教学对话记录存到卡片上：跳过后随时可回来接着聊（D15/D29）
   const saveTeachingMessages = (incidentId: string, nodeId: string, messages: Message[]) => {
     setIncidents(prev => persist(prev.map(inc => {
@@ -176,7 +189,7 @@ const App: React.FC = () => {
           />
           <Route
             path="/review"
-            element={<ReviewPage />}
+            element={<ReviewPage updateAttemptDebrief={updateAttemptDebrief} />}
           />
           <Route
             path="/archives"
