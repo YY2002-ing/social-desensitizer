@@ -10,6 +10,7 @@ interface ArchivePageProps {
   incidents: Incident[];
   setSession: any;
   addRealWorldRecord: (incidentId: string, record: Omit<RealWorldRecord, 'id' | 'timestamp'>) => void;
+  setNodeDismissed: (incidentId: string, nodeId: string, dismissed: boolean) => void;
 }
 
 type ViewMode = 'byEvent' | 'byTactic';
@@ -23,7 +24,7 @@ const difficultyLabels: Record<Difficulty, string> = {
   [Difficulty.RANDOM]: '随机'
 };
 
-const ArchivePage: React.FC<ArchivePageProps> = ({ incidents, setSession, addRealWorldRecord }) => {
+const ArchivePage: React.FC<ArchivePageProps> = ({ incidents, setSession, addRealWorldRecord, setNodeDismissed }) => {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>('byEvent');
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
@@ -93,6 +94,23 @@ const ArchivePage: React.FC<ArchivePageProps> = ({ incidents, setSession, addRea
     const status = getNodeStatus(node, inc);
     const badge = NODE_STATUS_LABELS[status];
     const isExpanded = expandedCardId === node.id;
+
+    // 用户归档的卡片：置灰收起，只留恢复入口。不做任何"回避"解读（D28）
+    if (node.dismissed) {
+      return (
+        <div key={node.id} className="bg-gray-50 rounded-xl border border-gray-100 p-3 flex items-center justify-between opacity-70">
+          <div className="flex-1 pr-2 min-w-0">
+            <h4 className="text-xs text-gray-400 line-through truncate">{node.description}</h4>
+            <p className="text-[9px] text-gray-300 mt-0.5">已归档：这张不需要练</p>
+          </div>
+          <button
+            onClick={() => setNodeDismissed(inc.id, node.id, false)}
+            className="text-[10px] font-bold text-blue-500 flex-shrink-0"
+          >恢复</button>
+        </div>
+      );
+    }
+
     return (
       <div key={node.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div
@@ -128,6 +146,14 @@ const ArchivePage: React.FC<ArchivePageProps> = ({ incidents, setSession, addRea
               </button>
             </div>
 
+            {node.teachingMessages && node.teachingMessages.length > 0 && (
+              <button
+                onClick={() => goPractice(inc, node)}
+                className="w-full text-left text-[10px] text-gray-500 bg-white border border-gray-200 rounded-xl px-3 py-2 active:scale-[0.98] transition-transform"
+              >
+                📖 之前的练前分析还在，点这里回去接着看 →
+              </button>
+            )}
             {node.attempts.length === 0 ? (
               <p className="text-[10px] text-gray-400 py-2 italic">尚未对此场景进行模拟练习</p>
             ) : (
@@ -141,7 +167,9 @@ const ArchivePage: React.FC<ArchivePageProps> = ({ incidents, setSession, addRea
                     <span className="text-xs font-bold text-gray-700">{difficultyLabels[att.difficulty]}模式</span>
                     <span className="text-[10px] text-gray-400">
                       {new Date(att.timestamp).toLocaleString([], {month: 'numeric', day: 'numeric', hour: '2-digit', minute:'2-digit'})}
-                      {att.sudsBefore != null && att.sudsAfter != null && (
+                      {att.sudsEncounter != null ? (
+                        <span className="ml-2 font-bold text-gray-500">遭遇紧张度 {att.sudsEncounter}</span>
+                      ) : att.sudsBefore != null && att.sudsAfter != null && (
                         <span className={`ml-2 font-bold ${att.sudsAfter < att.sudsBefore ? 'text-green-500' : 'text-gray-400'}`}>
                           紧张度 {att.sudsBefore}→{att.sudsAfter}
                         </span>
@@ -155,6 +183,14 @@ const ArchivePage: React.FC<ArchivePageProps> = ({ incidents, setSession, addRea
                 </div>
               ))
             )}
+
+            {/* 用户有权宣布某个场景不值得练（D28）；归档可随时恢复，程序不做回避解读 */}
+            <button
+              onClick={() => setNodeDismissed(inc.id, node.id, true)}
+              className="w-full text-center text-[10px] text-gray-300 pt-1 pb-0.5"
+            >
+              这张不需要练，收起来
+            </button>
           </div>
         )}
       </div>

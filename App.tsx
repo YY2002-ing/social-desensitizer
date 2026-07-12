@@ -10,6 +10,7 @@ import ReviewPage from './pages/ReviewPage';
 import ArchivePage from './pages/ArchivePage';
 import CatastrophePage from './pages/CatastrophePage';
 import GrowthPage from './pages/GrowthPage';
+import SettingsPage from './pages/SettingsPage';
 
 const INCIDENTS_STORAGE_KEY = 'social_trainer_incidents_v4';
 const LEGACY_V3_KEY = 'social_trainer_incidents_v3';
@@ -152,6 +153,14 @@ const App: React.FC = () => {
     })));
   };
 
+  // "这张不需要练"：用户主动归档/恢复卡片。只记录用户的决定，不做任何回避推断（D28/EVIDENCE 第17条）
+  const setNodeDismissed = (incidentId: string, nodeId: string, dismissed: boolean) => {
+    setIncidents(prev => persist(prev.map(inc => {
+      if (inc.id !== incidentId) return inc;
+      return { ...inc, nodes: inc.nodes.map(n => n.id === nodeId ? { ...n, dismissed } : n) };
+    })));
+  };
+
   // 教学对话记录存到卡片上：跳过后随时可回来接着聊（D15/D29）
   const saveTeachingMessages = (incidentId: string, nodeId: string, messages: Message[]) => {
     setIncidents(prev => persist(prev.map(inc => {
@@ -193,7 +202,7 @@ const App: React.FC = () => {
           />
           <Route
             path="/archives"
-            element={<ArchivePage incidents={incidents} setSession={setCurrentSession} addRealWorldRecord={addRealWorldRecord} />}
+            element={<ArchivePage incidents={incidents} setSession={setCurrentSession} addRealWorldRecord={addRealWorldRecord} setNodeDismissed={setNodeDismissed} />}
           />
           <Route
             path="/catastrophe"
@@ -202,6 +211,10 @@ const App: React.FC = () => {
           <Route
             path="/growth"
             element={<GrowthPage incidents={incidents} />}
+          />
+          <Route
+            path="/settings"
+            element={<SettingsPage />}
           />
         </Routes>
       </div>

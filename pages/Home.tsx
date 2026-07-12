@@ -120,9 +120,9 @@ const Home: React.FC<HomeProps> = ({ setSession, saveIncident, incidents, messag
     navigate('/strategy'); // 先学再练：先看应对方向，再选难度
   };
 
-  // 摊平所有事件下的场景卡片，用于首页快捷入口展示
-  const recentCards = incidents.flatMap(inc => inc.nodes.map(node => ({ incident: inc, node }))).slice(0, 5);
-  const totalCardCount = incidents.reduce((sum, inc) => sum + inc.nodes.length, 0);
+  // 摊平所有事件下的场景卡片（用户归档"不需要练"的除外），抽屉里全量显示、内部滚动（D19 修正）
+  const allCards = incidents.flatMap(inc => inc.nodes.filter(n => !n.dismissed).map(node => ({ incident: inc, node })));
+  const totalCardCount = allCards.length;
 
   return (
     <div className="max-w-md mx-auto h-screen bg-[#EDEDED] flex flex-col overflow-hidden relative">
@@ -174,9 +174,14 @@ const Home: React.FC<HomeProps> = ({ setSession, saveIncident, incidents, messag
           {totalCardCount > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>}
         </button>
         <h1 className="text-base font-bold text-gray-800">社交复盘小助手</h1>
-        <button onClick={() => navigate('/growth')} className="text-gray-600 p-2" title="成长轨迹">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
-        </button>
+        <div className="flex items-center">
+          <button onClick={() => navigate('/growth')} className="text-gray-600 p-2" title="成长轨迹">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+          </button>
+          <button onClick={() => navigate('/settings')} className="text-gray-600 p-2" title="设置">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          </button>
+        </div>
       </header>
 
       {/* 聊天区 */}
@@ -227,34 +232,28 @@ const Home: React.FC<HomeProps> = ({ setSession, saveIncident, incidents, messag
           </div>
         )}
 
-        {/* 冲突场景抽屉 */}
+        {/* 冲突场景抽屉：与上方提示条同宽同边距，全量显示、内部滚动（D19 修正） */}
         {showIncidents && totalCardCount > 0 && (
-          <div className="bg-white border-t border-gray-100 p-4 space-y-3 max-h-60 overflow-y-auto shadow-[0_-4px_12px_rgba(0,0,0,0.05)] animate-fade-in">
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2">点击选择一个场景开始实战演练</p>
-            {recentCards.map(({ incident, node }) => (
-              <div
-                key={node.id}
-                onClick={() => startSimulation(incident, node)}
-                className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex items-center justify-between active:scale-[0.98] transition-transform cursor-pointer group"
-              >
-                <div className="flex-1 mr-3">
-                  <p className="text-[9px] text-blue-400 font-bold truncate">{incident.title}</p>
-                  <h4 className="text-xs font-bold text-gray-800 truncate">{node.description}</h4>
-                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 italic">“{node.opponentSaid}”</p>
+          <div className="px-4">
+            <div className="bg-white border-x border-b border-gray-200 p-4 space-y-3 max-h-[55vh] overflow-y-auto shadow-[0_-4px_12px_rgba(0,0,0,0.05)] animate-fade-in">
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2">点击选择一个场景开始实战演练（共 {totalCardCount} 个）</p>
+              {allCards.map(({ incident, node }) => (
+                <div
+                  key={node.id}
+                  onClick={() => startSimulation(incident, node)}
+                  className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex items-center justify-between active:scale-[0.98] transition-transform cursor-pointer group"
+                >
+                  <div className="flex-1 mr-3">
+                    <p className="text-[9px] text-blue-400 font-bold truncate">{incident.title}</p>
+                    <h4 className="text-xs font-bold text-gray-800 truncate">{node.description}</h4>
+                    <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 italic">“{node.opponentSaid}”</p>
+                  </div>
+                  <div className="bg-blue-50 text-blue-500 p-1.5 rounded-full group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7-7 7"></path></svg>
+                  </div>
                 </div>
-                <div className="bg-blue-50 text-blue-500 p-1.5 rounded-full group-hover:bg-blue-500 group-hover:text-white transition-colors">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7-7 7"></path></svg>
-                </div>
-              </div>
-            ))}
-            {totalCardCount > recentCards.length && (
-              <button
-                onClick={() => navigate('/archives')}
-                className="w-full text-center text-[11px] font-bold text-blue-500 py-2"
-              >
-                查看全部 {totalCardCount} 个场景 →
-              </button>
-            )}
+              ))}
+            </div>
           </div>
         )}
 
