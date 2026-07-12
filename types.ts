@@ -31,7 +31,10 @@ export interface ConversationNode {
   description: string;
   tacticIds: string[]; // 对方在该场景使用的话术，取自 tactics.ts 固定词表
   attempts: SimulationAttempt[];
-  strategies?: NodeStrategy | null; // 应对方向内容缓存，首次进入生成
+  strategies?: NodeStrategy | null; // （旧版字段，仅为兼容历史数据保留）静态应对方向缓存，已被对话式教学取代
+  teachingMessages?: Message[]; // 教学对话记录：可跳过、可随时回来接着聊（D15/D29）
+  dismissed?: boolean;       // "这张不需要练"：用户主动归档，不作任何回避推断（D28/EVIDENCE 第17条）
+  dismissedNote?: string;    // 归档时用户随手说的原因
 }
 
 export interface Message {
@@ -39,6 +42,7 @@ export interface Message {
   role: 'user' | 'opponent' | 'assistant';
   content: string;
   timestamp: number;
+  intensity?: number; // 对手消息的情绪烈度 0-3（0平和/1施压/2强硬贬低/3攻击爆发），驱动压迫特效；用户消息无此字段
 }
 
 export interface SimulationReview {
@@ -47,6 +51,22 @@ export interface SimulationReview {
   discoveries: string;
   tacticsIdentified?: Array<{ tacticId: string; quote: string }>; // 定位到具体某句话
   eventSummary?: string; // 事件概括复盘：对本次模拟所属整个事件的概括总结
+  behaviorObservations?: Array<{ categoryId: string; quote: string }>; // AI 按 behaviors.ts 固定类目识别的用户行为实例
+  outcome?: 'held' | 'conceded' | 'derailed' | 'unclear'; // 本轮结局：守住边界 / 妥协让步 / 被带跑偏 / 看不出来
+}
+
+// 练后对话式对账的结构化提取（对账问题照搬暴露疗法教科书记录单，见 EVIDENCE.md 第 16 条）
+export interface DebriefRecord {
+  messages: Message[]; // 对账对话原文
+  fearedOccurred: 'no' | 'occurred_coped' | 'occurred_overwhelmed' | 'unclear' | null; // 练前担心的局面：没出现 / 出现了且应对住了 / 出现了没扛住 / 说不清
+  learned: string | null; // 用户自己说的"这一轮学到/看法变化"，原话摘录
+}
+
+// 模拟内的机械行为指标（程序直接记录，不经过 AI）
+export interface BehaviorRecord {
+  replyLatenciesMs: number[]; // 每条回复的用时（对方消息弹出到按下发送）
+  replyLengths: number[];     // 每条回复的字数
+  helpCount: number;          // 点"小助手教我"的次数
 }
 
 // 单次模拟尝试
@@ -56,8 +76,12 @@ export interface SimulationAttempt {
   difficulty: Difficulty;
   messages: Message[];
   review?: SimulationReview;
-  sudsBefore?: number; // 练前主观不适评分 0-10（SUDs，暴露疗法标准工具）
-  sudsAfter?: number;  // 练后主观不适评分 0-10
+  sudsBefore?: number; // （旧版字段，仅为兼容历史数据保留）练前评分
+  sudsAfter?: number;  // （旧版字段，仅为兼容历史数据保留）练后评分
+  sudsEncounter?: number;  // 遭遇瞬间紧张度 0-10：对方第一句话弹出后测（D16），跨次对比它才是脱敏曲线
+  fearedOutcome?: string;  // 练前担心出现的局面，教学对话中用户的原话（预期违背对账的锚点）
+  debrief?: DebriefRecord; // 练后对话式对账
+  behavior?: BehaviorRecord; // 机械行为指标
 }
 
 // 现实应用记录：用户在现实中"做到了"的一次标记

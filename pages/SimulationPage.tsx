@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Difficulty, Message, SessionArchive, SimulationAttempt, Incident } from '../types';
-import { createOpponentChat, createAssistantChat, generateReview } from '../services/deepseekService';
+import { Difficulty, Message, SessionArchive, SimulationAttempt, Incident, BehaviorRecord } from '../types';
+import { createOpponentChat, createWarAssistantChat, generateReview, OpponentSession, AssistantSession } from '../services/deepseekService';
 import { recommendDifficulty } from '../progress';
 
 interface SimulationPageProps {
@@ -63,13 +63,19 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   const [assistantMessages, setAssistantMessages] = useState<Message[]>([]);
   const [assistantInput, setAssistantInput] = useState('');
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
+  const [assistantChips, setAssistantChips] = useState<string[]>([]); // 快捷胶囊：可点可无视（D20）
 
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const assistantScrollRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const opponentChatRef = useRef<any>(null);
-  const assistantChatRef = useRef<any>(null);
+  const opponentChatRef = useRef<OpponentSession | null>(null);
+  const assistantChatRef = useRef<AssistantSession | null>(null);
+  // 小助手已同步到第几条战况：每次求助只把增量喂给它（D14 实时战况）
+  const assistantSyncedRef = useRef(0);
+  // 机械行为指标（D17）：程序直接记录，不经过 AI
+  const behaviorRef = useRef<BehaviorRecord>({ replyLatenciesMs: [], replyLengths: [], helpCount: 0 });
+  const lastOpponentAtRef = useRef<number>(0);
 
   // 优先从全局 incidents 取最新节点数据（含最新演练记录，供难度推荐），session 里的是进入时的快照
   const freshIncident = incidents.find(i => i.id === session.incidentId);
@@ -108,9 +114,13 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
       id: crypto.randomUUID(),
       role: 'opponent' as const,
       content: "怎么不说话了？心虚了？",
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      intensity: 2
     };
     setMessages(prev => [...prev, timeoutMsg]);
+    // 把这句界面侧的催促补进对手的记忆，否则它不知道自己"说过"这句话
+    opponentChatRef.current?.notice('用户超时未回复，你追发了一句："怎么不说话了？心虚了？"');
+    lastOpponentAtRef.current = Date.now();
     startTimer();
   };
 
@@ -143,6 +153,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
       content: selectedNode.opponentSaid,
       timestamp: Date.now()
     }]);
+    lastOpponentAtRef.current = Date.now();
     setPhase('chat');
     setTimeLeft(60);
     startTimer();
@@ -152,18 +163,27 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     if (!inputText.trim() || isEnding) return;
     stopTimer();
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: inputText, timestamp: Date.now() };
+    // 机械行为指标：回复用时（对方消息弹出→按下发送）与字数
+    if (lastOpponentAtRef.current) behaviorRef.current.replyLatenciesMs.push(Date.now() - lastOpponentAtRef.current);
+    behaviorRef.current.replyLengths.push(userMsg.content.length);
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsOpponentTyping(true);
 
     try {
-      const response = await opponentChatRef.current.sendMessage({ message: userMsg.content });
-      setMessages(prev => [...prev, {
-        id: crypto.randomUUID(),
-        role: 'opponent',
-        content: response.text || "嗯？",
-        timestamp: Date.now()
-      }]);
+      const turn = await opponentChatRef.current!.send(userMsg.content);
+      const now = Date.now();
+      setMessages(prev => [
+        ...prev,
+        ...turn.messages.map((m, i) => ({
+          id: crypto.randomUUID(),
+          role: 'opponent' as const,
+          content: m.text,
+          timestamp: now + i,
+          intensity: m.intensity,
+        })),
+      ]);
+      lastOpponentAtRef.current = now;
       setTimeLeft(60);
       startTimer();
     } catch (e) { console.error(e); } finally { setIsOpponentTyping(false); }
@@ -172,22 +192,31 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   const handleOpenAssistant = () => {
     stopTimer();
     setShowAssistant(true);
-    const lastOpponentMsg = messages.filter(m => m.role === 'opponent').pop();
+    behaviorRef.current.helpCount += 1; // 求助次数：App 情境下的安全行为指标
     if (!assistantChatRef.current) {
-      assistantChatRef.current = createAssistantChat(selectedNode, lastOpponentMsg?.content || "");
-      setAssistantMessages([{ id: '1', role: 'opponent', content: '被卡住了吗？他这话听着确实不太舒服。', timestamp: Date.now() }]);
+      assistantChatRef.current = createWarAssistantChat(selectedNode, session.opponentProfile);
+      setAssistantMessages([{ id: '1', role: 'opponent', content: '卡住了？跟我说说现在的情况。', timestamp: Date.now() }]);
     }
   };
 
-  const handleAssistantSend = async () => {
-    if (!assistantInput.trim()) return;
-    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: assistantInput, timestamp: Date.now() };
+  // 求助时把"上次之后的新战况"作为增量喂给小助手，它才看得见实时战局（D14）
+  const handleAssistantSend = async (text?: string) => {
+    const content = (text ?? assistantInput).trim();
+    if (!content) return;
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content, timestamp: Date.now() };
     setAssistantMessages(prev => [...prev, userMsg]);
     setAssistantInput('');
+    setAssistantChips([]);
     setIsAssistantTyping(true);
     try {
-      const response = await assistantChatRef.current.sendMessage({ message: userMsg.content });
-      setAssistantMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'opponent', content: response.text || "我理解。", timestamp: Date.now() }]);
+      const delta = messages.slice(assistantSyncedRef.current);
+      assistantSyncedRef.current = messages.length;
+      const prefix = delta.length
+        ? `【最新战况】\n${delta.map(m => `${m.role === 'user' ? '用户' : '对方'}：${m.content}`).join('\n')}\n\n【用户对你说】`
+        : '';
+      const turn = await assistantChatRef.current!.send(prefix + content);
+      setAssistantMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'opponent', content: turn.text, timestamp: Date.now() }]);
+      setAssistantChips(turn.chips);
     } catch (e) { console.error(e); } finally { setIsAssistantTyping(false); }
   };
 
@@ -206,6 +235,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
       review: review,
       sudsBefore,
       sudsAfter,
+      behavior: { ...behaviorRef.current },
     };
     if (session.incidentId) {
       saveAttempt(session.incidentId, selectedNode.id, attempt);
@@ -323,7 +353,21 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
               ))}
               {isAssistantTyping && <div className="text-[10px] text-gray-400 italic ml-2">正在思考...</div>}
             </div>
-            <div className="p-4 bg-white border-t flex space-x-2 pb-10 sm:pb-4"><input type="text" value={assistantInput} onChange={(e) => setAssistantInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAssistantSend()} placeholder="跟小助手聊聊..." className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-1 focus:ring-blue-400" /><button onClick={handleAssistantSend} className="bg-blue-500 text-white px-5 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform">发送</button></div>
+            {/* 快捷胶囊：可点可无视，点了等于替用户说了这句话（D20） */}
+            {assistantChips.length > 0 && !isAssistantTyping && (
+              <div className="px-4 pb-2 flex flex-wrap gap-2 bg-white/60">
+                {assistantChips.map((chip, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleAssistantSend(chip)}
+                    className="text-xs bg-white border border-blue-200 text-blue-600 px-3 py-1.5 rounded-full active:scale-95 transition-transform shadow-sm"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="p-4 bg-white border-t flex space-x-2 pb-10 sm:pb-4"><input type="text" value={assistantInput} onChange={(e) => setAssistantInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAssistantSend()} placeholder="跟小助手聊聊..." className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-1 focus:ring-blue-400" /><button onClick={() => handleAssistantSend()} className="bg-blue-500 text-white px-5 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform">发送</button></div>
           </div>
         </div>
       )}
