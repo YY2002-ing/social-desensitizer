@@ -101,10 +101,12 @@ export interface OpponentSession {
   notice(text: string): void;
 }
 
-/** 军师/教学/对账会话：每轮一条回复 + 可选的快捷胶囊（0~3 个，用户可点可无视） */
+/** 军师/教学/对账会话：每轮一条回复 + 可选的快捷胶囊（0~3 个，用户可点可无视）
+ * suggestedReply：给"对方"的建议话术（实战军师专用）——UI 渲染为独立话术卡，一键填进战场输入框 */
 export interface AssistantTurn {
   text: string;
   chips: string[];
+  suggestedReply?: string;
 }
 export interface AssistantSession {
   send(message: string): Promise<AssistantTurn>;
@@ -166,14 +168,19 @@ B. 给一句用户可以直接照着发出去的话。
 
 【聊天规则】像朋友发微信，每条不超过2句话、40字以内；一次只说一个点、只问一个问题；严禁数字列表和"首先/其次"。
 
-【输出格式】每轮输出 JSON：{"text": "你的回复", "chips": ["胶囊1", "胶囊2"]}
-chips 是递给用户的快捷选项（0~3 个，每个不超过8个字）：用户没头绪时用五层定位的选项或情绪词；用户明确在追问时给 [] 空数组。胶囊是给用户点的候选回答，不是给你自己的。` + SAFETY_GUARDRAIL
+【输出格式】每轮输出 JSON：{"text": "你的回复", "chips": ["胶囊1"], "suggestedReply": "给对方的话术" 或省略}
+- chips 是用户回应"你"的快捷选项（0~3 个，每个不超过 8 个字），只能是对你说的话（情绪词、追问、五层定位的选项）。**绝不允许把"给对方说的话"放进 chips**。
+- suggestedReply 是你建议用户直接发给"对方"的一句话术——所有给对方的话术只能放这个字段，界面会把它做成一键可用的话术卡。用户明确索要话术时（"给我一句话""怎么回他"），本轮**必须**给出 suggestedReply，不许只反问。没有话术要给时省略该字段。` + SAFETY_GUARDRAIL
   );
   return {
     async send(message: string): Promise<AssistantTurn> {
       const parsed = await session.send(message);
       if (parsed && typeof parsed.text === 'string') {
-        return { text: parsed.text, chips: Array.isArray(parsed.chips) ? parsed.chips.filter((c: any) => typeof c === 'string').slice(0, 3) : [] };
+        return {
+          text: parsed.text,
+          chips: Array.isArray(parsed.chips) ? parsed.chips.filter((c: any) => typeof c === 'string').slice(0, 3) : [],
+          suggestedReply: typeof parsed.suggestedReply === 'string' && parsed.suggestedReply.trim() ? parsed.suggestedReply.trim() : undefined,
+        };
       }
       return { text: '我在，你接着说。', chips: [] };
     },

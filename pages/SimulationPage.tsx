@@ -75,6 +75,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   const [assistantInput, setAssistantInput] = useState('');
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
   const [assistantChips, setAssistantChips] = useState<string[]>([]); // 快捷胶囊：可点可无视（D20）
+  const [assistantSuggested, setAssistantSuggested] = useState<string | null>(null); // 军师给的话术卡：一键填进战场输入框
 
   // 练后对账对话状态（D16：用户表达优先的三问对账）
   const [debriefMessages, setDebriefMessages] = useState<Message[]>([]);
@@ -285,7 +286,17 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
       const turn = await assistantChatRef.current!.send(prefix + content);
       setAssistantMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'opponent', content: turn.text, timestamp: Date.now() }]);
       setAssistantChips(turn.chips);
+      setAssistantSuggested(turn.suggestedReply || null);
     } catch (e) { console.error(e); } finally { setIsAssistantTyping(false); }
+  };
+
+  // 话术卡一键上膛：填进战场输入框，用户过目后自己按发送
+  const useSuggestedReply = () => {
+    if (!assistantSuggested) return;
+    setInputText(assistantSuggested);
+    setAssistantSuggested(null);
+    setShowAssistant(false);
+    startTimer();
   };
 
   // 练完 → 对账对话（用户表达优先，可跳过直接看复盘，D16/D29）
@@ -509,6 +520,22 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
               ))}
               {isAssistantTyping && <div className="text-[10px] text-gray-400 italic ml-2">正在思考...</div>}
             </div>
+            {/* 话术卡：军师给的"发给对方"的话，一键填进战场输入框 */}
+            {assistantSuggested && !isAssistantTyping && (
+              <div className="px-4 pb-2">
+                <div className="bg-blue-600 rounded-2xl p-3.5 shadow-lg animate-fade-in">
+                  <p className="text-[9px] font-bold text-blue-200 uppercase tracking-widest mb-1">可以这样回他</p>
+                  <p className="text-[13px] text-white leading-relaxed">“{assistantSuggested}”</p>
+                  <button
+                    onClick={useSuggestedReply}
+                    className="mt-2.5 w-full py-2 bg-white text-blue-600 text-xs font-bold rounded-xl active:scale-95 transition-transform"
+                  >
+                    填进输入框，回到对话 →
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* 快捷胶囊：可点可无视，点了等于替用户说了这句话（D20） */}
             {assistantChips.length > 0 && !isAssistantTyping && (
               <div className="px-4 pb-2 flex flex-wrap gap-2 bg-white/60">
