@@ -101,11 +101,11 @@ export interface OpponentSession {
   notice(text: string): void;
 }
 
-/** 军师/教学/对账会话：每轮一条回复 + 可选的快捷胶囊（0~3 个，用户可点可无视）
- * suggestedReply：给"对方"的建议话术（实战军师专用）——UI 渲染为独立话术卡，一键填进战场输入框 */
+/** 军师/教学/对账会话：每轮一条回复。
+ * suggestedReply：给"对方"的示范话术（实战军师专用）——UI 渲染为示范卡，仅供参考，字由用户自己打（D28：不代言）。
+ * 注：曾有"快捷胶囊"设计（替用户预设回答选项），2026-07-13 被作者否决下线——语言表达本身就是理清想法的过程，让用户自己说。 */
 export interface AssistantTurn {
   text: string;
-  chips: string[];
   suggestedReply?: string;
 }
 export interface AssistantSession {
@@ -138,13 +138,13 @@ export const createGuidanceChat = (priorMessages: Message[] = []): ChatSession =
   );
 
 // ─── 五层自我认知定位（D20）：胶囊选项的固定骨架 ──────────────────
-const SELF_AWARENESS_LAYERS = `用户"说不清、卡住了"分五层，先定位他卡在哪层，再走该层的引导。注意：这个分层是你的内部方法，**绝不对用户说"层"这个词**（不要问"你卡在哪一层"），直接问具体的问题或递选项即可：
-① 有情绪但不知道是什么情绪 → 按当下战况挑 3~4 个贴切的情绪词（如：委屈、心虚、火大、慌、被冒犯、憋屈、羞耻）用胶囊递给他，问"更接近哪个？"——只问，不替他断言。
-【胶囊用语规范】胶囊是替用户说话的候选，必须是用户自己会亲口打出来的大白话（"就是慌""说不上来""有点懵""不知道咋回"），禁止文学腔和小说腔（"心一沉""五味杂陈"这类不许出现），每个 2~6 个字。
+const SELF_AWARENESS_LAYERS = `用户"说不清、卡住了"分五层，先定位他卡在哪层，再走该层的引导。注意：这个分层是你的内部方法，**绝不对用户说"层"这个词**（不要问"你卡在哪一层"），用自然的对话问出来：
+① 有情绪但不知道是什么情绪 → **只有当用户自己表示"说不清/不知道怎么形容"时**，才在对话里递 2~3 个贴合战况的情绪词试探（"更接近憋屈，还是心虚？也可能都不是——你感觉是什么就是什么"）。绝不主动预设。
 ② 知道是什么情绪，但不知道它从哪来 → 带他回看对方具体哪句话触发的。
 ③ 不知道自己想要什么 → 问他"如果完全不用顾虑对方，你最想要的结果是什么？"
-④ 知道想要什么，但不知道怎么说/怎么做 → 给一句可以直接发出去的话术示范。
-⑤ 知道怎么做，但不敢、有顾虑 → 先问他怕的是什么后果，再一起检验这个顾虑。`;
+④ 知道想要什么，但不知道怎么说/怎么做 → 给一句可以照着说的话术示范。
+⑤ 知道怎么做，但不敢、有顾虑 → 先问他怕的是什么后果，再一起检验这个顾虑。
+【禁止预设用户的感受】不许断言、猜测或用选项预设用户此刻或当时的情绪（背景信息里的"用户当时的感受"只是提取的假设，不是事实）。人的情绪复杂混杂，问开放的问题，让他自己说——语言表达本身就是他理清自己的过程。`;
 
 /** 实战中的军师小助手（D14）：每轮可附带最新战况；回复必须有落点 */
 export const createWarAssistantChat = (node: ConversationNode, opponentProfile?: string): AssistantSession => {
@@ -168,9 +168,8 @@ B. 给一句用户可以直接照着发出去的话。
 
 【聊天规则】像朋友发微信，每条不超过2句话、40字以内；一次只说一个点、只问一个问题；严禁数字列表和"首先/其次"。
 
-【输出格式】每轮输出 JSON：{"text": "你的回复", "chips": ["胶囊1"], "suggestedReply": "给对方的话术" 或省略}
-- chips 是用户回应"你"的快捷选项（0~3 个，每个不超过 8 个字），只能是对你说的话（情绪词、追问、五层定位的选项）。**绝不允许把"给对方说的话"放进 chips**。
-- suggestedReply 是你建议用户直接发给"对方"的一句话术——所有给对方的话术只能放这个字段，界面会把它做成一键可用的话术卡。用户明确索要话术时（"给我一句话""怎么回他"），本轮**必须**给出 suggestedReply，不许只反问。没有话术要给时省略该字段。` + SAFETY_GUARDRAIL
+【输出格式】每轮输出 JSON：{"text": "你的回复", "suggestedReply": "给对方的示范话术" 或省略}
+- suggestedReply 是你建议用户回给"对方"的一句示范话术——所有给对方的话术只能放这个字段，界面会把它做成示范卡（用户参考后自己打字，不会替他发送）。用户明确索要话术时（"给我一句话""怎么回他"），本轮**必须**给出 suggestedReply，不许只反问。没有话术要给时省略该字段。` + SAFETY_GUARDRAIL
   );
   return {
     async send(message: string): Promise<AssistantTurn> {
@@ -178,11 +177,10 @@ B. 给一句用户可以直接照着发出去的话。
       if (parsed && typeof parsed.text === 'string') {
         return {
           text: parsed.text,
-          chips: Array.isArray(parsed.chips) ? parsed.chips.filter((c: any) => typeof c === 'string').slice(0, 3) : [],
           suggestedReply: typeof parsed.suggestedReply === 'string' && parsed.suggestedReply.trim() ? parsed.suggestedReply.trim() : undefined,
         };
       }
-      return { text: '我在，你接着说。', chips: [] };
+      return { text: '我在，你接着说。' };
     },
   };
 };
@@ -375,17 +373,16 @@ ${tacticNotes || '（无标签，从对方原话自行分析其手法）'}
 5. 差不多讲完时（大约 3~5 轮后），自然地问一句："待会儿和他过招，你最担心出现的是什么局面？"记住用户的回答，简短回应即可，不再展开新教学。
 6. ${SELF_AWARENESS_LAYERS}
 
-【输出格式】每轮输出 JSON：{"text": "你的回复", "chips": ["胶囊1"]}
-chips 为用户的快捷回应选项（0~3 个，各不超过 8 字），如"然后呢""为什么是我""举个例子"；用户明确追问时给 []。` + SAFETY_GUARDRAIL,
-    priorMessages.map(m => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.role === 'user' ? m.content : JSON.stringify({ text: m.content, chips: [] }) }))
+【输出格式】每轮输出 JSON：{"text": "你的回复"}` + SAFETY_GUARDRAIL,
+    priorMessages.map(m => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.role === 'user' ? m.content : JSON.stringify({ text: m.content }) }))
   );
   return {
     async send(message: string): Promise<AssistantTurn> {
       const parsed = await session.send(message);
       if (parsed && typeof parsed.text === 'string') {
-        return { text: parsed.text, chips: Array.isArray(parsed.chips) ? parsed.chips.filter((c: any) => typeof c === 'string').slice(0, 3) : [] };
+        return { text: parsed.text };
       }
-      return { text: '我们接着看这个场景。你对他那句话最直接的感觉是什么？', chips: [] };
+      return { text: '我们接着看这个场景。你先说说，他那句话砸过来的时候你是什么状态？' };
     },
   };
 };
@@ -436,13 +433,13 @@ export const createDebriefChat = (context: {
 - 每条回复不超过 3 句话；严禁列表和"首先/其次"；语气自然，不打官腔。
 - 三个问题都聊到后，简短收尾（一两句，肯定他这一轮真实的表现，不夸张不灌鸡汤），并告诉他可以去看复盘报告了。
 
-【输出格式】每轮输出 JSON：{"text": "你的回复", "chips": []}（此场景一般不需要胶囊，chips 恒为空数组即可）` + SAFETY_GUARDRAIL
+【输出格式】每轮输出 JSON：{"text": "你的回复"}` + SAFETY_GUARDRAIL
   );
   return {
     async send(message: string): Promise<AssistantTurn> {
       const parsed = await session.send(message);
-      if (parsed && typeof parsed.text === 'string') return { text: parsed.text, chips: [] };
-      return { text: '嗯，我听着。', chips: [] };
+      if (parsed && typeof parsed.text === 'string') return { text: parsed.text };
+      return { text: '嗯，我听着。' };
     },
   };
 };

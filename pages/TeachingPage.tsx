@@ -20,7 +20,6 @@ const TeachingPage: React.FC<TeachingPageProps> = ({ session, setSession, incide
 
   const [messages, setMessages] = useState<Message[]>(node?.teachingMessages || []);
   const [inputText, setInputText] = useState('');
-  const [chips, setChips] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +41,6 @@ const TeachingPage: React.FC<TeachingPageProps> = ({ session, setSession, incide
       chatRef.current.send('（用户刚进入练前分析，请从对方那句原话讲起，开始第一个教学点）')
         .then(turn => {
           setMessages([{ id: crypto.randomUUID(), role: 'opponent', content: turn.text, timestamp: Date.now() }]);
-          setChips(turn.chips);
         })
         .catch(e => setError(e?.message || '教练暂时连不上'))
         .finally(() => setIsTyping(false));
@@ -59,18 +57,16 @@ const TeachingPage: React.FC<TeachingPageProps> = ({ session, setSession, incide
     );
   }
 
-  const handleSend = async (text?: string) => {
-    const content = (text ?? inputText).trim();
+  const handleSend = async () => {
+    const content = inputText.trim();
     if (!content || isTyping) return;
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
-    setChips([]);
     setIsTyping(true);
     try {
       const turn = await chatRef.current!.send(content);
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'opponent', content: turn.text, timestamp: Date.now() }]);
-      setChips(turn.chips);
       setError(null);
     } catch (e: any) { setError(e?.message || '发送失败'); } finally { setIsTyping(false); }
   };
@@ -125,17 +121,6 @@ const TeachingPage: React.FC<TeachingPageProps> = ({ session, setSession, incide
           </div>
         )}
       </div>
-
-      {/* 快捷胶囊：可点可无视（D20） */}
-      {chips.length > 0 && !isTyping && (
-        <div className="px-4 pb-1 flex flex-wrap gap-2">
-          {chips.map((chip, i) => (
-            <button key={i} onClick={() => handleSend(chip)} className="text-xs bg-white border border-blue-200 text-blue-600 px-3 py-1.5 rounded-full active:scale-95 transition-transform shadow-sm">
-              {chip}
-            </button>
-          ))}
-        </div>
-      )}
 
       <div className="bg-white border-t p-3 space-y-2 pb-6">
         <div className="flex items-center space-x-2">

@@ -12,8 +12,8 @@ interface SimulationPageProps {
   incidents: Incident[];
 }
 
-// 阶段流转（D16）：选难度 → 进入对话（对方第一句话弹出后测"遭遇瞬间"紧张度）→ 练完对话式对账 → 复盘
-type Phase = 'difficulty' | 'chat' | 'debrief';
+// 阶段流转（D16）：选难度 → 3-2-1 入场倒数 → 对方第一句话砸出（静置片刻后测"遭遇瞬间"紧张度）→ 练完对话式对账 → 复盘
+type Phase = 'difficulty' | 'countdown' | 'chat' | 'debrief';
 
 // 倒计时时长：作者原始设计 30 秒（D19）
 const TURN_SECONDS = 30;
@@ -74,8 +74,8 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   const [assistantMessages, setAssistantMessages] = useState<Message[]>([]);
   const [assistantInput, setAssistantInput] = useState('');
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
-  const [assistantChips, setAssistantChips] = useState<string[]>([]); // 快捷胶囊：可点可无视（D20）
-  const [assistantSuggested, setAssistantSuggested] = useState<string | null>(null); // 军师给的话术卡：一键填进战场输入框
+  const [assistantSuggested, setAssistantSuggested] = useState<string | null>(null); // 军师给的示范话术卡：仅供参考，字用户自己打
+  const [countdownNum, setCountdownNum] = useState(3); // 3-2-1 入场倒数
 
   // 练后对账对话状态（D16：用户表达优先的三问对账）
   const [debriefMessages, setDebriefMessages] = useState<Message[]>([]);
@@ -178,20 +178,32 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     );
   }
 
-  // 选完难度直接进入对话：对方第一句话"啪"地弹出，紧张度在这个心跳漏一拍的时刻测（D16）
+  // 选完难度：3-2-1 黑屏倒数（前置调动感官）→ 对方第一句话"啪"地砸出 → 静置约 2.5 秒
+  // 让那句话先砸到人 → 紧张度弹层再浮起（D16 时序修正：先看到话，再被问紧张度）
   const startChat = (chosen: Difficulty) => {
     setDifficulty(chosen);
     opponentChatRef.current = createOpponentChat(chosen, selectedNode, session.opponentProfile);
-    setMessages([{
-      id: crypto.randomUUID(),
-      role: 'opponent',
-      content: selectedNode.opponentSaid,
-      timestamp: Date.now()
-    }]);
-    lastOpponentAtRef.current = Date.now();
-    setPhase('chat');
-    // 计时器等紧张度测完再启动，测量期间不施加时间压力
-    setShowEncounterSuds(true);
+    setPhase('countdown');
+    setCountdownNum(3);
+    const tick = (n: number) => {
+      if (n > 0) {
+        setCountdownNum(n);
+        setTimeout(() => tick(n - 1), 750);
+        return;
+      }
+      setMessages([{
+        id: crypto.randomUUID(),
+        role: 'opponent',
+        content: selectedNode.opponentSaid,
+        timestamp: Date.now(),
+        intensity: 2,
+      }]);
+      lastOpponentAtRef.current = Date.now();
+      setPhase('chat');
+      // 静置片刻再弹紧张度测量；计时器等测完再启动，测量期间不施加时间压力
+      setTimeout(() => setShowEncounterSuds(true), 2500);
+    };
+    tick(3);
   };
 
   const confirmEncounterSuds = (value: number) => {
@@ -269,13 +281,12 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   };
 
   // 求助时把"上次之后的新战况"作为增量喂给小助手，它才看得见实时战局（D14）
-  const handleAssistantSend = async (text?: string) => {
-    const content = (text ?? assistantInput).trim();
+  const handleAssistantSend = async () => {
+    const content = assistantInput.trim();
     if (!content) return;
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content, timestamp: Date.now() };
     setAssistantMessages(prev => [...prev, userMsg]);
     setAssistantInput('');
-    setAssistantChips([]);
     setIsAssistantTyping(true);
     try {
       const delta = messages.slice(assistantSyncedRef.current);
@@ -285,18 +296,8 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
         : '';
       const turn = await assistantChatRef.current!.send(prefix + content);
       setAssistantMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'opponent', content: turn.text, timestamp: Date.now() }]);
-      setAssistantChips(turn.chips);
       setAssistantSuggested(turn.suggestedReply || null);
     } catch (e) { console.error(e); } finally { setIsAssistantTyping(false); }
-  };
-
-  // 话术卡一键上膛：填进战场输入框，用户过目后自己按发送
-  const useSuggestedReply = () => {
-    if (!assistantSuggested) return;
-    setInputText(assistantSuggested);
-    setAssistantSuggested(null);
-    setShowAssistant(false);
-    startTimer();
   };
 
   // 练完 → 对账对话（用户表达优先，可跳过直接看复盘，D16/D29）
@@ -458,6 +459,15 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     );
   }
 
+  // ── 阶段二：3-2-1 入场倒数（前置感官调动）──────────────────────
+  if (phase === 'countdown') {
+    return (
+      <div className="max-w-md mx-auto h-screen bg-gray-950 flex items-center justify-center">
+        <span key={countdownNum} className="text-8xl font-black text-white animate-fade-in tabular-nums">{countdownNum}</span>
+      </div>
+    );
+  }
+
   // ── 阶段三：模拟对话 ────────────────────────────────────────
   return (
     <div className="max-w-md mx-auto h-screen bg-[#EDEDED] flex flex-col relative overflow-hidden">
@@ -469,8 +479,12 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
         </div>
         <button onClick={startDebrief} className="text-xs font-bold text-red-500 bg-white px-2 py-1 rounded-md shadow-sm">完成</button>
       </header>
-      <div className="h-1 bg-gray-200 w-full">
-        <div className={`h-full transition-all duration-1000 ${timeLeft <= 10 ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} style={{ width: `${(timeLeft / TURN_SECONDS) * 100}%` }}></div>
+      {/* 倒计时与进度条一体，放显眼处（D19 修正：不再缩在左下角） */}
+      <div className="flex items-center bg-[#EDEDED] px-3 py-1 space-x-2">
+        <div className="h-1.5 flex-1 bg-gray-200 rounded-full overflow-hidden">
+          <div className={`h-full transition-all duration-1000 ${timeLeft <= 10 && !showAssistant ? 'bg-red-500 animate-pulse' : timeLeft <= 10 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${(timeLeft / TURN_SECONDS) * 100}%` }}></div>
+        </div>
+        <span className={`tabular-nums font-bold flex-shrink-0 ${timeLeft <= 10 ? 'text-red-500 text-base' : 'text-gray-500 text-sm'}`}>{timeLeft}s</span>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 pb-10">
         {messages.map(msg => {
@@ -495,14 +509,13 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
           <input type="text" value={inputText} onChange={(e) => handleInputChange(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="打字时计时暂停..." className="flex-1 bg-gray-100 border-none rounded-md px-4 py-2 text-sm focus:ring-1 focus:ring-green-400" />
           <button onClick={handleSendMessage} className={`px-4 py-2 rounded-md font-bold text-sm transition-colors ${inputText.trim() ? 'bg-[#50C878] text-white' : 'bg-gray-100 text-gray-400'}`}>发送</button>
         </div>
-        <div className="flex justify-between items-center px-1">
-          <div className="flex items-center space-x-1 text-xs text-gray-400"><span className={timeLeft <= 10 ? 'text-red-500 font-bold' : ''}>⏱️ {timeLeft}s</span></div>
+        <div className="flex justify-end items-center px-1">
           <button onClick={handleOpenAssistant} className="text-[11px] bg-blue-50 text-blue-500 px-4 py-1.5 rounded-full font-bold active:scale-95 transition-transform">💡 小助手教我</button>
         </div>
       </div>
 
-      {/* 倒计时末段的屏幕边缘泛红（用户知情开启才生效，D27-7） */}
-      {fxFlash === 'on' && timeLeft <= 10 && !showEncounterSuds && (
+      {/* 倒计时末段的屏幕边缘泛红（知情开启才生效 D27-7；求助小助手时暂停施压，不闪） */}
+      {fxFlash === 'on' && timeLeft <= 10 && !showEncounterSuds && !showAssistant && (
         <div className="absolute inset-0 pointer-events-none z-30 edge-pulse rounded-none"></div>
       )}
       {/* 遭遇瞬间紧张度：对方第一句话可见时的底部弹层（D16） */}
@@ -520,34 +533,20 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
               ))}
               {isAssistantTyping && <div className="text-[10px] text-gray-400 italic ml-2">正在思考...</div>}
             </div>
-            {/* 话术卡：军师给的"发给对方"的话，一键填进战场输入框 */}
+            {/* 示范话术卡：只给参考，不代打——字要用户自己说出口才算练习（D28/D30修正） */}
             {assistantSuggested && !isAssistantTyping && (
               <div className="px-4 pb-2">
                 <div className="bg-blue-600 rounded-2xl p-3.5 shadow-lg animate-fade-in">
-                  <p className="text-[9px] font-bold text-blue-200 uppercase tracking-widest mb-1">可以这样回他</p>
+                  <p className="text-[9px] font-bold text-blue-200 uppercase tracking-widest mb-1">可以往这个方向回他</p>
                   <p className="text-[13px] text-white leading-relaxed">“{assistantSuggested}”</p>
                   <button
-                    onClick={useSuggestedReply}
+                    onClick={() => { setAssistantSuggested(null); setShowAssistant(false); startTimer(); }}
                     className="mt-2.5 w-full py-2 bg-white text-blue-600 text-xs font-bold rounded-xl active:scale-95 transition-transform"
                   >
-                    填进输入框，回到对话 →
+                    记住了，我自己去回 →
                   </button>
+                  <p className="text-[9px] text-blue-200 text-center mt-1.5">用自己的话说出来，才算练到了。</p>
                 </div>
-              </div>
-            )}
-
-            {/* 快捷胶囊：可点可无视，点了等于替用户说了这句话（D20） */}
-            {assistantChips.length > 0 && !isAssistantTyping && (
-              <div className="px-4 pb-2 flex flex-wrap gap-2 bg-white/60">
-                {assistantChips.map((chip, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleAssistantSend(chip)}
-                    className="text-xs bg-white border border-blue-200 text-blue-600 px-3 py-1.5 rounded-full active:scale-95 transition-transform shadow-sm"
-                  >
-                    {chip}
-                  </button>
-                ))}
               </div>
             )}
             <div className="p-4 bg-white border-t flex space-x-2 pb-10 sm:pb-4"><input type="text" value={assistantInput} onChange={(e) => setAssistantInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAssistantSend()} placeholder="跟小助手聊聊..." className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-1 focus:ring-blue-400" /><button onClick={() => handleAssistantSend()} className="bg-blue-500 text-white px-5 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform">发送</button></div>
