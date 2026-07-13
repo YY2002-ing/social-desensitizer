@@ -260,9 +260,9 @@ const Home: React.FC<HomeProps> = ({ setSession, saveIncident, incidents, messag
                 <div
                   key={node.id}
                   onClick={() => startSimulation(incident, node)}
-                  className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex items-center justify-between active:scale-[0.98] transition-transform cursor-pointer group"
+                  className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex items-center justify-between active:scale-[0.98] transition-transform cursor-pointer group overflow-hidden"
                 >
-                  <div className="flex-1 mr-3">
+                  <div className="flex-1 mr-3 min-w-0">
                     <p className="text-[9px] text-blue-400 font-bold truncate">{incident.title}</p>
                     <h4 className="text-xs font-bold text-gray-800 truncate">{node.description}</h4>
                     <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 italic">“{node.opponentSaid}”</p>

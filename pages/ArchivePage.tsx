@@ -335,7 +335,7 @@ const ArchivePage: React.FC<ArchivePageProps> = ({ incidents, setSession, addRea
                           onClick={() => navigate('/catastrophe', { state: { incidentId: inc.id } })}
                           className="bg-gray-900 text-white rounded-xl p-3 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                         >
-                          <div className="flex-1 pr-2">
+                          <div className="flex-1 pr-2 min-w-0">
                             <h4 className="text-xs font-bold">最坏结果模拟</h4>
                             <p className="text-[10px] text-gray-300 mt-0.5 line-clamp-1">{inc.catastrophe.fear}</p>
                           </div>
