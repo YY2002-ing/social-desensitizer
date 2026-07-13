@@ -45,6 +45,15 @@
             50% { box-shadow: inset 0 0 56px 14px rgba(239, 68, 68, 0.42); }
         }
         .edge-pulse { animation: edgePulse 0.9s ease-in-out infinite; }
+
+        /* 3-2-1 入场倒数：数字砰地弹出再回稳 */
+        @keyframes countPop {
+            0% { opacity: 0; transform: scale(2.6); }
+            55% { opacity: 1; transform: scale(0.92); }
+            75% { transform: scale(1.06); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .count-pop { animation: countPop 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
     </style>
 <script type="importmap">
 {

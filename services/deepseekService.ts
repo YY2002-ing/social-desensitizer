@@ -101,12 +101,11 @@ export interface OpponentSession {
   notice(text: string): void;
 }
 
-/** 军师/教学/对账会话：每轮一条回复。
- * suggestedReply：给"对方"的示范话术（实战军师专用）——UI 渲染为示范卡，仅供参考，字由用户自己打（D28：不代言）。
- * 注：曾有"快捷胶囊"设计（替用户预设回答选项），2026-07-13 被作者否决下线——语言表达本身就是理清想法的过程，让用户自己说。 */
+/** 军师/教学/对账会话：每轮一条回复，纯对话。
+ * 注：曾有"快捷胶囊"（替用户预设回答）与"示范话术卡"（单独弹卡）两版设计，均被作者否决下线（2026-07-13）——
+ * 一切教学都发生在对话里；示范话术由小助手在回复文字中说出，用户用自己的话打出来。 */
 export interface AssistantTurn {
   text: string;
-  suggestedReply?: string;
 }
 export interface AssistantSession {
   send(message: string): Promise<AssistantTurn>;
@@ -169,17 +168,14 @@ B. 给一句用户可以直接照着发出去的话。
 
 【聊天规则】像朋友发微信，每条不超过2句话、40字以内；一次只说一个点、只问一个问题；严禁数字列表和"首先/其次"。
 
-【输出格式】每轮输出 JSON：{"text": "你的回复", "suggestedReply": "给对方的示范话术" 或省略}
-- suggestedReply 是你建议用户回给"对方"的一句示范话术——所有给对方的话术只能放这个字段，界面会把它做成示范卡（用户参考后自己打字，不会替他发送）。用户明确索要话术时（"给我一句话""怎么回他"），本轮**必须**给出 suggestedReply，不许只反问。没有话术要给时省略该字段。` + SAFETY_GUARDRAIL
+【示范话术的给法】示范话术直接写在你的回复文字里，放在引号内，随后自然带一句提醒（如"意思到了就行，用你自己的话说"）——不要指望任何界面机制替用户填字或发送。用户明确索要话术时（"给我一句话""怎么回他"），本轮**必须**在回复里给出一句引号内的示范，不许只反问。
+【输出格式】每轮输出 JSON：{"text": "你的回复"}` + SAFETY_GUARDRAIL
   );
   return {
     async send(message: string): Promise<AssistantTurn> {
       const parsed = await session.send(message);
       if (parsed && typeof parsed.text === 'string') {
-        return {
-          text: parsed.text,
-          suggestedReply: typeof parsed.suggestedReply === 'string' && parsed.suggestedReply.trim() ? parsed.suggestedReply.trim() : undefined,
-        };
+        return { text: parsed.text };
       }
       return { text: '我在，你接着说。' };
     },

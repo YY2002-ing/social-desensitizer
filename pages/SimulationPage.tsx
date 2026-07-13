@@ -74,7 +74,6 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   const [assistantMessages, setAssistantMessages] = useState<Message[]>([]);
   const [assistantInput, setAssistantInput] = useState('');
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
-  const [assistantSuggested, setAssistantSuggested] = useState<string | null>(null); // 军师给的示范话术卡：仅供参考，字用户自己打
   const [countdownNum, setCountdownNum] = useState(3); // 3-2-1 入场倒数
 
   // 练后对账对话状态（D16：用户表达优先的三问对账）
@@ -188,7 +187,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
     const tick = (n: number) => {
       if (n > 0) {
         setCountdownNum(n);
-        setTimeout(() => tick(n - 1), 750);
+        setTimeout(() => tick(n - 1), 1000);
         return;
       }
       setMessages([{
@@ -296,7 +295,6 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
         : '';
       const turn = await assistantChatRef.current!.send(prefix + content);
       setAssistantMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'opponent', content: turn.text, timestamp: Date.now() }]);
-      setAssistantSuggested(turn.suggestedReply || null);
     } catch (e) { console.error(e); } finally { setIsAssistantTyping(false); }
   };
 
@@ -463,7 +461,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
   if (phase === 'countdown') {
     return (
       <div className="max-w-md mx-auto h-screen bg-gray-950 flex items-center justify-center">
-        <span key={countdownNum} className="text-8xl font-black text-white animate-fade-in tabular-nums">{countdownNum}</span>
+        <span key={countdownNum} className="text-8xl font-black text-white count-pop tabular-nums">{countdownNum}</span>
       </div>
     );
   }
@@ -533,22 +531,6 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ session, setSession, sa
               ))}
               {isAssistantTyping && <div className="text-[10px] text-gray-400 italic ml-2">正在思考...</div>}
             </div>
-            {/* 示范话术卡：只给参考，不代打——字要用户自己说出口才算练习（D28/D30修正） */}
-            {assistantSuggested && !isAssistantTyping && (
-              <div className="px-4 pb-2">
-                <div className="bg-blue-600 rounded-2xl p-3.5 shadow-lg animate-fade-in">
-                  <p className="text-[9px] font-bold text-blue-200 uppercase tracking-widest mb-1">可以往这个方向回他</p>
-                  <p className="text-[13px] text-white leading-relaxed">“{assistantSuggested}”</p>
-                  <button
-                    onClick={() => { setAssistantSuggested(null); setShowAssistant(false); startTimer(); }}
-                    className="mt-2.5 w-full py-2 bg-white text-blue-600 text-xs font-bold rounded-xl active:scale-95 transition-transform"
-                  >
-                    记住了，我自己去回 →
-                  </button>
-                  <p className="text-[9px] text-blue-200 text-center mt-1.5">用自己的话说出来，才算练到了。</p>
-                </div>
-              </div>
-            )}
             <div className="p-4 bg-white border-t flex space-x-2 pb-10 sm:pb-4"><input type="text" value={assistantInput} onChange={(e) => setAssistantInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAssistantSend()} placeholder="跟小助手聊聊..." className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-1 focus:ring-blue-400" /><button onClick={() => handleAssistantSend()} className="bg-blue-500 text-white px-5 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform">发送</button></div>
           </div>
         </div>
