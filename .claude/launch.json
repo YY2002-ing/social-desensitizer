@@ -52,6 +52,18 @@
       "port": 8767
     },
     {
+      "name": "hogwarts",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8797", "--directory", "/Users/yingyao/Desktop/我的代码/hogwarts-castle"],
+      "port": 8797
+    },
+    {
+      "name": "novel-study",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8777", "--directory", "/Users/yingyao/Desktop/我的代码/小说助手/书房"],
+      "port": 8777
+    },
+    {
       "name": "theater-mockup",
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8757", "--directory", "/private/tmp/claude-501/-Users-yingyao-Desktop------social-assistant-main/84dcc174-d7c5-4352-ad1b-b49da67db81a/scratchpad/theater-mockup"],
